@@ -132,7 +132,19 @@
             <label>結果表示（秒）</label><input data-key="hold" type="number" min="0" max="120" step="0.5">
             <label>毎回シャッフル</label><label style="color:inherit"><input data-key="shuffleEachSpin" type="checkbox"> 回すたびに並びを混ぜる</label>
             <label>常に表示</label><label style="color:inherit"><input data-key="alwaysShow" type="checkbox"> 回していない時もOBSに表示</label>
+            <div class="sound-title">🔔 効果音</div>
+            <label>音を鳴らす</label><label style="color:inherit"><input data-key="soundOn" type="checkbox"> ルーレットで音を鳴らす</label>
+            <label class="full">音量</label><div class="sound-row full"><input data-key="volume" type="range" min="0" max="1" step="0.05" style="flex:1"><span id="rl-volume-label" class="hint"></span></div>
+            <label class="full">開始音</label>
+            <div class="sound-row full"><select data-key="startSe" class="sound-select" data-first="builtin"></select><button class="small sound-test" data-kind="startSe" title="試聴">▶</button><button class="small sound-add" data-key="startSe" title="音声ファイルを追加">＋ファイル</button></div>
+            <label class="full">回転中BGM</label>
+            <div class="sound-row full"><select data-key="bgm" class="sound-select" data-first="nonefirst"></select><button class="small sound-test" data-kind="bgm" title="試聴">▶</button><button class="small sound-add" data-key="bgm" title="音声ファイルを追加">＋ファイル</button></div>
+            <label class="full">カチカチ音</label><div class="sound-row full"><label style="color:inherit"><input data-key="tick" type="checkbox"> 項目を通るたびに鳴らす</label><button class="small sound-test" data-kind="tick" title="試聴">▶</button></div>
+            <label class="full">結果音</label>
+            <div class="sound-row full"><select data-key="resultSe" class="sound-select" data-first="builtin"></select><button class="small sound-test" data-kind="resultSe" title="試聴">▶</button><button class="small sound-add" data-key="resultSe" title="音声ファイルを追加">＋ファイル</button></div>
           </div>
+          <input type="file" id="sound-file" accept=".mp3,.wav,.ogg,.m4a,audio/*" hidden>
+          <p class="hint">「＋ファイル」で自分で用意した音（mp3 / wav / ogg / m4a）を追加すると、その欄に設定されます。<code>haishin-counter\sounds</code> フォルダに直接入れてもOKです。音はOBSのルーレット画面から鳴ります（OBSのソース設定で「OBSで音声を制御する」をONにすると配信に乗せやすくなります）。</p>
           <div class="row" style="margin-top:10px"><button class="primary" id="rl-save">保存</button></div>
         </div>
         <div class="card">
@@ -244,6 +256,7 @@
 
 <div class="toast" id="toast"></div>
 <script src="/connector.js"></script>
+<script src="/sound.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

@@ -74,6 +74,12 @@ header h1 {
 .dot.connecting { background: var(--warn); box-shadow: 0 0 0 3px #fff0cf; }
 .dot.error { background: var(--err); box-shadow: 0 0 0 3px #ffe0e4; }
 
+.sound-title { grid-column: 1 / -1; margin-top: 8px; padding-top: 10px; border-top: 2px dashed var(--line); font-weight: 800; color: #e0659b; }
+.form-grid .full { grid-column: 1 / -1; }
+.form-grid label.full { margin-bottom: -6px; }
+.sound-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.sound-row select { flex: 1; min-width: 0; }
+input[type="range"] { accent-color: var(--accent); padding: 0; border: none; }
 .version-warn { margin: 12px 18px 0; padding: 10px 16px; border-radius: 14px; background: #fff3d6; border: 2px solid #ffc65c; color: #8a5a00; font-weight: 800; }
 .version-warn[hidden] { display: none; }
 nav.tabs { display: flex; gap: 8px; padding: 14px 18px 4px; overflow-x: auto; justify-content: center; flex-wrap: wrap; }

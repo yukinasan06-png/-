@@ -50,6 +50,7 @@
 </div>
 <script src="/connector.js"></script>
 <script src="/overlay/common.js"></script>
+<script src="/sound.js"></script>
 <script>
   const preview = params.get('preview') === '1';
   const soundOn = params.get('sound') !== '0' && !preview;
@@ -84,47 +85,10 @@
   let S = null;
   let hideTimer = null;
 
-  // ------ 効果音（WebAudio で生成） ------
-  let audio = null;
-  function ac() {
-    if (!soundOn) return null;
-    try {
-      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-      if (audio.state === 'suspended') audio.resume();
-    } catch (e) {
-      return null;
-    }
-    return audio;
-  }
-  function tick() {
-    const a = ac();
-    if (!a) return;
-    const o = a.createOscillator();
-    const g = a.createGain();
-    o.type = 'triangle';
-    o.frequency.value = 1400;
-    g.gain.setValueAtTime(0.12, a.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.05);
-    o.connect(g).connect(a.destination);
-    o.start();
-    o.stop(a.currentTime + 0.06);
-  }
-  function fanfare() {
-    const a = ac();
-    if (!a) return;
-    [523, 659, 784, 1047].forEach((f, i) => {
-      const o = a.createOscillator();
-      const g = a.createGain();
-      o.type = 'square';
-      o.frequency.value = f;
-      const t = a.currentTime + i * 0.12;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.08, t + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + (i === 3 ? 0.6 : 0.15));
-      o.connect(g).connect(a.destination);
-      o.start(t);
-      o.stop(t + 0.7);
-    });
+  // ------ 効果音（public/sound.js）。プレビューと ?sound=0 のときは鳴らさない ------
+  function soundOpts() {
+    const o = (S && S.roulette.options) || {};
+    return soundOn ? o : Object.assign({}, o, { soundOn: false });
   }
 
   // ------ 描画 ------
@@ -242,6 +206,7 @@
     tplEl.textContent = sp.template;
     resultEl.classList.remove('show');
     show();
+    Sound.start(soundOpts());
     const n = items.length;
     const seg = (Math.PI * 2) / n;
     const elapsed = (Date.now() - sp.startedAt) / 1000;
@@ -265,7 +230,7 @@
       draw();
       const idx = indexAtPointer();
       if (idx !== lastIdx) {
-        if (lastIdx !== -1) tick();
+        if (lastIdx !== -1) Sound.tick(soundOpts());
         lastIdx = idx;
       }
       if (t < 1) anim = requestAnimationFrame(step);
@@ -274,10 +239,10 @@
     anim = requestAnimationFrame(step);
   }
 
-  function finish(sp) {
+  function finish(sp, silent) {
     resultEl.textContent = sp.result;
     resultEl.classList.add('show');
-    fanfare();
+    if (!silent) Sound.result(soundOpts());
     const remain = sp.startedAt + (sp.duration + sp.hold) * 1000 - Date.now();
     hideLater(Math.max(1500, remain));
   }
@@ -301,7 +266,7 @@
           tplEl.textContent = sp.template;
           draw();
           show();
-          finish(sp);
+          finish(sp, true);
         } else {
           startSpin(sp);
         }

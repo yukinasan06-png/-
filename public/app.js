@@ -1,7 +1,7 @@
 'use strict';
 
 // server.js の VERSION と合わせる
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 
 let S = null; // サーバーから受け取った状態
 let selectedTpl = 0;
@@ -337,7 +337,10 @@ function renderRoulette() {
 
   const opts = R.options;
   const f = $('#rl-form');
-  for (const k of ['duration', 'hold', 'shuffleEachSpin', 'alwaysShow']) setField(f.querySelector(`[data-key=${k}]`), opts[k]);
+  fillSoundSelects();
+  for (const k of ['duration', 'hold', 'shuffleEachSpin', 'alwaysShow', 'soundOn', 'volume', 'tick', 'startSe', 'bgm', 'resultSe'])
+    setField(f.querySelector(`[data-key=${k}]`), opts[k]);
+  $('#rl-volume-label').textContent = Math.round(Number(f.querySelector('[data-key=volume]').value) * 100) + '%';
 
   const hist = R.history
     .map(h => {
@@ -351,6 +354,42 @@ function renderRoulette() {
     hl.innerHTML = hist || '<li class="hint">まだありません</li>';
     hl.dataset.html = hist;
   }
+}
+
+// ---------------- 効果音 ----------------
+let soundFiles = [];
+let soundFilesKey = '';
+
+async function loadSoundFiles() {
+  try {
+    const r = await (await fetch('/api/sounds')).json();
+    soundFiles = r.files || [];
+  } catch (e) {}
+  if (S) renderRoulette();
+}
+
+function fillSoundSelects() {
+  const opts = S.roulette.options;
+  // 設定されているが一覧にないファイルも選択肢に出す
+  const names = [...new Set([...soundFiles, ...['startSe', 'bgm', 'resultSe'].map(k => opts[k]).filter(v => v && v !== 'none')])];
+  const key = names.join('|');
+  if (key === soundFilesKey) return;
+  soundFilesKey = key;
+  for (const sel of $$('.sound-select')) {
+    const cur = sel.value;
+    const head =
+      sel.dataset.first === 'builtin'
+        ? '<option value="">🎵 内蔵の音</option><option value="none">🔇 なし</option>'
+        : '<option value="">🔇 なし</option>';
+    sel.innerHTML = head + names.map(n => `<option value="${esc(n)}">📁 ${esc(n)}</option>`).join('');
+    if (cur) sel.value = cur;
+  }
+}
+
+function currentSoundForm() {
+  const o = Object.assign({}, S.roulette.options);
+  for (const el of $$('#rl-form [data-key]')) o[el.dataset.key] = el.type === 'checkbox' ? el.checked : el.value;
+  return o;
 }
 
 function loadTplEditor() {
@@ -439,6 +478,42 @@ function setup() {
     const r = await act('updateSettings', { settings: { meter: readForm('#meter-form') } });
     if (r?.ok) toast('保存しました');
   };
+  // 効果音: 試聴・ファイル追加
+  $('#rl-form').addEventListener('input', e => {
+    if (e.target.dataset.key === 'volume') $('#rl-volume-label').textContent = Math.round(Number(e.target.value) * 100) + '%';
+  });
+  $$('.sound-test').forEach(b => {
+    b.onclick = () => {
+      const ok = Sound.preview(b.dataset.kind === 'startSe' ? 'start' : b.dataset.kind === 'resultSe' ? 'result' : b.dataset.kind, currentSoundForm());
+      if (!ok) toast('BGMのファイルを選んでください');
+    };
+  });
+  let uploadKey = null;
+  $$('.sound-add').forEach(b => {
+    b.onclick = () => {
+      uploadKey = b.dataset.key;
+      $('#sound-file').value = '';
+      $('#sound-file').click();
+    };
+  });
+  $('#sound-file').addEventListener('change', async () => {
+    const file = $('#sound-file').files[0];
+    if (!file || !uploadKey) return;
+    toast('アップロード中…');
+    try {
+      const r = await (await fetch('/upload?name=' + encodeURIComponent(file.name), { method: 'POST', body: file })).json();
+      if (!r.ok) return toast('エラー: ' + r.error);
+      await act('updateSettings', { settings: { roulette: { [uploadKey]: r.name } } });
+      const sel = $(`#rl-form [data-key=${uploadKey}]`);
+      delete sel.dataset.dirty;
+      await loadSoundFiles();
+      toast(`「${r.name}」を追加しました`);
+    } catch (e) {
+      toast('アップロードに失敗しました');
+    }
+  });
+  loadSoundFiles();
+
   $('#rl-save').onclick = async () => {
     const r = await act('updateSettings', { settings: { roulette: readForm('#rl-form') } });
     if (r?.ok) toast('保存しました');

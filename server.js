@@ -12,9 +12,11 @@ const PORT = Number(process.env.PORT) || 8790; // 既存ツール(8787)と同時
 const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_FILE = path.join(__dirname, 'data.json');
+const SOUNDS_DIR = path.join(__dirname, 'sounds'); // ルーレット用の音声ファイル置き場
+const SOUND_EXT = ['.mp3', '.wav', '.ogg', '.m4a'];
 
 // 画面側（public/app.js の APP_VERSION）と合わせる。ずれていると操作パネルに再起動の案内が出る
-const VERSION = 6;
+const VERSION = 7;
 
 const TEMPLATE_COUNT = 30;
 const CUSTOM_COUNT = 10;
@@ -57,7 +59,19 @@ function defaultState() {
       // likes / gift / viewers の取得元: 'youtube' | 'onecomme' | 'off'
       sources: { likes: 'youtube', gift: 'youtube', viewers: 'youtube' },
       meter: { title: '盛り上がりメーター', threshold: 100, autoSpin: true },
-      roulette: { duration: 6, hold: 5, shuffleEachSpin: false, alwaysShow: false },
+      roulette: {
+        duration: 6,
+        hold: 5,
+        shuffleEachSpin: false,
+        alwaysShow: false,
+        // 効果音: startSe / resultSe は ''=内蔵の音, 'none'=なし, それ以外=sounds フォルダのファイル名。bgm は ''=なし
+        soundOn: true,
+        volume: 0.7,
+        tick: true,
+        startSe: '',
+        bgm: '',
+        resultSe: '',
+      },
     },
     meter: { fired: 0 },
     likes: { base: 0, raw: null, videoId: '' },
@@ -761,6 +775,12 @@ const actions = {
       if (r.hold !== undefined) cur.roulette.hold = Math.min(120, Math.max(0, num(r.hold, 5)));
       if (r.shuffleEachSpin !== undefined) cur.roulette.shuffleEachSpin = !!r.shuffleEachSpin;
       if (r.alwaysShow !== undefined) cur.roulette.alwaysShow = !!r.alwaysShow;
+      if (r.soundOn !== undefined) cur.roulette.soundOn = !!r.soundOn;
+      if (r.tick !== undefined) cur.roulette.tick = !!r.tick;
+      if (r.volume !== undefined) cur.roulette.volume = Math.min(1, Math.max(0, num(r.volume, 0.7)));
+      for (const k of ['startSe', 'bgm', 'resultSe']) {
+        if (r[k] !== undefined) cur.roulette[k] = r[k] === 'none' ? 'none' : safeSoundName(r[k]) || '';
+      }
     }
     // 接続先の変更はブラウザ側（connector.js）が状態の更新を見て再接続する
     if (JSON.stringify(cur.onecomme) !== ocBefore) status.onecomme = { state: 'connecting', message: '再接続中…' };
@@ -841,6 +861,7 @@ const MIME = {
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
   '.ico': 'image/x-icon',
 };
 
@@ -855,6 +876,13 @@ function readBody(req) {
     req.on('end', () => resolve(body));
     req.on('error', reject);
   });
+}
+
+// 音声ファイル名として安全な名前にする（フォルダ区切りや使えない文字を除く）。不正なら ''
+function safeSoundName(v) {
+  const name = path.basename(String(v || '')).replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/^\.+/, '').trim();
+  if (!name || !SOUND_EXT.includes(path.extname(name).toLowerCase())) return '';
+  return name.slice(0, 120);
 }
 
 function json(res, code, obj) {
@@ -880,6 +908,61 @@ const server = http.createServer(async (req, res) => {
     }
   }
   // 外部ツールから GET で操作できる簡易エンドポイント（例: /api/spin, /api/add?id=custom1&n=1）
+  // ---- 音声ファイル（ルーレット用）----
+  if (p === '/api/sounds') {
+    fs.readdir(SOUNDS_DIR, (err, list) => {
+      const files = err ? [] : list.filter(f => SOUND_EXT.includes(path.extname(f).toLowerCase())).sort();
+      json(res, 200, { ok: true, files });
+    });
+    return;
+  }
+  if (p === '/upload' && req.method === 'POST') {
+    const name = safeSoundName(url.searchParams.get('name'));
+    if (!name) return json(res, 400, { ok: false, error: 'mp3 / wav / ogg / m4a のファイルを選んでください' });
+    const chunks = [];
+    let size = 0;
+    let tooBig = false;
+    req.on('data', c => {
+      size += c.length;
+      if (size > 30 * 1024 * 1024) {
+        tooBig = true;
+        return req.destroy();
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (tooBig) return json(res, 413, { ok: false, error: 'ファイルが大きすぎます（30MBまで）' });
+      fs.mkdir(SOUNDS_DIR, { recursive: true }, () => {
+        fs.writeFile(path.join(SOUNDS_DIR, name), Buffer.concat(chunks), err => {
+          if (err) return json(res, 500, { ok: false, error: '保存できませんでした: ' + err.message });
+          console.log('[sound] 追加:', name);
+          json(res, 200, { ok: true, name });
+        });
+      });
+    });
+    req.on('error', () => {});
+    return;
+  }
+  if (p.startsWith('/sounds/')) {
+    let name = '';
+    try {
+      name = safeSoundName(decodeURIComponent(p.slice('/sounds/'.length)));
+    } catch (e) {}
+    if (!name) {
+      res.writeHead(404);
+      return res.end();
+    }
+    fs.readFile(path.join(SOUNDS_DIR, name), (err, data) => {
+      if (err) {
+        res.writeHead(404);
+        return res.end();
+      }
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(name).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+
   if (p === '/api/spin') {
     actions.spin();
     changed();
