@@ -1,5 +1,8 @@
 'use strict';
 
+// server.js の VERSION と合わせる
+const APP_VERSION = 6;
+
 let S = null; // サーバーから受け取った状態
 let selectedTpl = 0;
 let tplDirty = false;
@@ -63,6 +66,7 @@ function fmt(n) {
 // ---------------- 描画 ----------------
 function render() {
   if (!S) return;
+  $('#version-warn').hidden = S.version === APP_VERSION;
   renderHeader();
   renderCounters();
   renderMeter();

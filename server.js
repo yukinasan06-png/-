@@ -13,6 +13,9 @@ const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_FILE = path.join(__dirname, 'data.json');
 
+// 画面側（public/app.js の APP_VERSION）と合わせる。ずれていると操作パネルに再起動の案内が出る
+const VERSION = 6;
+
 const TEMPLATE_COUNT = 30;
 const CUSTOM_COUNT = 10;
 const HISTORY_MAX = 30;
@@ -196,6 +199,7 @@ function publicState() {
     },
     status,
     templateCount: TEMPLATE_COUNT,
+    version: VERSION,
   };
 }
 
