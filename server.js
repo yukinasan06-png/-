@@ -16,7 +16,7 @@ const SOUNDS_DIR = path.join(__dirname, 'sounds'); // ルーレット用の音�
 const SOUND_EXT = ['.mp3', '.wav', '.ogg', '.m4a'];
 
 // 画面側（public/app.js の APP_VERSION）と合わせる。ずれていると操作パネルに再起動の案内が出る
-const VERSION = 7;
+const VERSION = 8;
 
 const TEMPLATE_COUNT = 30;
 const CUSTOM_COUNT = 10;
@@ -379,6 +379,15 @@ function onMessage(client, msg) {
       break;
     case 'gifts':
       if (client === leader) handleYoutubeGifts(msg.gifts);
+      break;
+    // OBS のルーレット画面からの効果音の再生結果
+    case 'soundReport':
+      if (msg.ok) {
+        if (status.sound && status.sound.name === msg.name) delete status.sound;
+      } else {
+        status.sound = { name: String(msg.name || ''), reason: String(msg.reason || 'error'), time: Date.now() };
+      }
+      changed();
       break;
     case 'status':
       if (client === leader && (msg.key === 'onecomme' || msg.key === 'youtube')) {

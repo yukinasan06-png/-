@@ -1,7 +1,7 @@
 'use strict';
 
 // server.js の VERSION と合わせる
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 
 let S = null; // サーバーから受け取った状態
 let selectedTpl = 0;
@@ -341,6 +341,16 @@ function renderRoulette() {
   for (const k of ['duration', 'hold', 'shuffleEachSpin', 'alwaysShow', 'soundOn', 'volume', 'tick', 'startSe', 'bgm', 'resultSe'])
     setField(f.querySelector(`[data-key=${k}]`), opts[k]);
   $('#rl-volume-label').textContent = Math.round(Number(f.querySelector('[data-key=volume]').value) * 100) + '%';
+  const se = S.status.sound;
+  const reasons = {
+    unsupported: 'この形式はOBSで再生できません。mp3 / wav / ogg に変換してください（m4a は鳴らないことがあります）',
+    blocked: 'OBSに自動再生を止められました。ソースのプロパティで「OBSで音声を制御する」をONにしてください',
+    network: 'ファイルが見つかりません。sounds フォルダにあるか確認してください',
+    error: '再生できませんでした',
+  };
+  const warn = $('#sound-warn');
+  warn.hidden = !se;
+  if (se) warn.textContent = `⚠ OBSで「${se.name}」を鳴らせませんでした（代わりに内蔵の音を鳴らしています）：${reasons[se.reason] || reasons.error}`;
 
   const hist = R.history
     .map(h => {
@@ -479,6 +489,16 @@ function setup() {
     if (r?.ok) toast('保存しました');
   };
   // 効果音: 試聴・ファイル追加
+  // 効果音の設定は変えた瞬間に保存する
+  const SOUND_KEYS = ['soundOn', 'volume', 'tick', 'startSe', 'bgm', 'resultSe'];
+  $('#rl-form').addEventListener('change', async e => {
+    const key = e.target.dataset.key;
+    if (!SOUND_KEYS.includes(key)) return;
+    const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    const r = await act('updateSettings', { settings: { roulette: { [key]: v } } });
+    delete e.target.dataset.dirty;
+    if (r?.ok) toast('効果音の設定を保存しました');
+  });
   $('#rl-form').addEventListener('input', e => {
     if (e.target.dataset.key === 'volume') $('#rl-volume-label').textContent = Math.round(Number(e.target.value) * 100) + '%';
   });

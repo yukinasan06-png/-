@@ -6,6 +6,9 @@
  *    結果をハブへ送る（操作パネル優先。なければ OBS の画面が担当）
  * =======================================================================*/
 
+// server.js の VERSION と合わせる（ずれていたら OBS 画面は自動で読み込み直す）
+const CLIENT_VERSION = 8;
+
 const Hub = (() => {
   let ws = null;
   let S = null;
@@ -23,6 +26,7 @@ const Hub = (() => {
         return;
       }
       if (msg.t === 'state') {
+        if (role === 'overlay' && msg.state.version !== undefined && msg.state.version !== CLIENT_VERSION) return reloadForUpdate();
         S = msg.state;
         handlers.state.forEach(fn => fn(S));
         Fetcher.update();
@@ -40,6 +44,19 @@ const Hub = (() => {
       Fetcher.update();
       setTimeout(() => connect(role), 2000);
     };
+  }
+
+  // サーバーが更新されたら OBS 画面を読み込み直す（連続リロードは 30 秒あける）
+  function reloadForUpdate() {
+    let last = 0;
+    try {
+      last = Number(sessionStorage.getItem('hubReloadAt')) || 0;
+      if (Date.now() - last < 30000) return;
+      sessionStorage.setItem('hubReloadAt', String(Date.now()));
+    } catch (e) {}
+    const u = new URL(location.href);
+    u.searchParams.set('_v', String(Date.now()));
+    location.replace(u.toString());
   }
 
   function send(obj) {

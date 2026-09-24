@@ -53,11 +53,26 @@ const Sound = (() => {
       notes([[523, 0, .14, .1], [659, .12, .14, .1], [784, .24, .14, .1], [1047, .36, .6, .1], [784, .36, .6, .05], [1319, .5, .5, .06]], v, 'square'),
   };
 
-  function playFile(name, v, loop) {
+  // 再生結果の通知先（OBS 画面がサーバーへ報告するのに使う）
+  let reporter = null;
+
+  function playFile(name, v, loop, fallback) {
     const el = new Audio('/sounds/' + encodeURIComponent(name));
     el.volume = v;
     el.loop = !!loop;
-    el.play().catch(() => {});
+    let failed = false;
+    const fail = reason => {
+      if (failed) return;
+      failed = true;
+      if (fallback) fallback();
+      if (reporter) reporter({ ok: false, name, reason });
+    };
+    el.addEventListener('error', () => {
+      const code = el.error && el.error.code;
+      fail(code === 4 ? 'unsupported' : code === 2 ? 'network' : 'error');
+    });
+    el.addEventListener('playing', () => reporter && reporter({ ok: true, name }), { once: true });
+    el.play().catch(e => fail(e && e.name === 'NotAllowedError' ? 'blocked' : e && e.name === 'NotSupportedError' ? 'unsupported' : 'error'));
     return el;
   }
 
@@ -66,7 +81,8 @@ const Sound = (() => {
     const key = kind === 'start' ? 'startSe' : 'resultSe';
     const f = o[key];
     if (f === 'none') return;
-    if (f) playFile(f, v);
+    // ファイルが鳴らせなかったときは内蔵の音で代わりに鳴らす
+    if (f) playFile(f, v, false, () => builtin[kind](v));
     else builtin[kind](v);
   }
 
@@ -103,6 +119,9 @@ const Sound = (() => {
       play('result', o);
     },
     stopBgm,
+    onReport(fn) {
+      reporter = fn;
+    },
     // 操作パネルの試聴用
     preview(kind, o) {
       const opt = Object.assign({}, o, { soundOn: true });

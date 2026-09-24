@@ -143,8 +143,9 @@
             <label class="full">結果音</label>
             <div class="sound-row full"><select data-key="resultSe" class="sound-select" data-first="builtin"></select><button class="small sound-test" data-kind="resultSe" title="試聴">▶</button><button class="small sound-add" data-key="resultSe" title="音声ファイルを追加">＋ファイル</button></div>
           </div>
+          <div id="sound-warn" class="version-warn" style="margin:10px 0 0" hidden></div>
           <input type="file" id="sound-file" accept=".mp3,.wav,.ogg,.m4a,audio/*" hidden>
-          <p class="hint">「＋ファイル」で自分で用意した音（mp3 / wav / ogg / m4a）を追加すると、その欄に設定されます。<code>haishin-counter\sounds</code> フォルダに直接入れてもOKです。音はOBSのルーレット画面から鳴ります（OBSのソース設定で「OBSで音声を制御する」をONにすると配信に乗せやすくなります）。</p>
+          <p class="hint">効果音の設定は選んだ瞬間に保存されます。「＋ファイル」で自分で用意した音（mp3 / wav / ogg がおすすめ）を追加すると、その欄に設定されます。<code>haishin-counter\sounds</code> フォルダに直接入れてもOKです。音はOBSのルーレット画面から鳴ります（OBSのソース設定で「OBSで音声を制御する」をONにすると配信に乗せやすくなります）。</p>
           <div class="row" style="margin-top:10px"><button class="primary" id="rl-save">保存</button></div>
         </div>
         <div class="card">

@@ -86,6 +86,8 @@
   let hideTimer = null;
 
   // ------ 効果音（public/sound.js）。プレビューと ?sound=0 のときは鳴らさない ------
+  if (!preview) Sound.onReport(r => Hub.send(Object.assign({ cmd: 'soundReport' }, r)));
+
   function soundOpts() {
     const o = (S && S.roulette.options) || {};
     return soundOn ? o : Object.assign({}, o, { soundOn: false });
