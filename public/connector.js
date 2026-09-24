@@ -7,7 +7,7 @@
  * =======================================================================*/
 
 // server.js の VERSION と合わせる（ずれていたら OBS 画面は自動で読み込み直す）
-const CLIENT_VERSION = 8;
+const CLIENT_VERSION = 9;
 
 const Hub = (() => {
   let ws = null;

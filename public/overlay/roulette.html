@@ -208,11 +208,11 @@
     tplEl.textContent = sp.template;
     resultEl.classList.remove('show');
     show();
-    Sound.start(soundOpts());
     const n = items.length;
     const seg = (Math.PI * 2) / n;
     const elapsed = (Date.now() - sp.startedAt) / 1000;
     const duration = Math.max(0.1, sp.duration - elapsed);
+    Sound.start(soundOpts(), duration * 1000 + 300);
     // 目標: 当選項目の範囲内（端を避けたランダム位置）が真上に来る回転量
     const jitter = (Math.random() * 0.7 + 0.15) * seg;
     const targetMod = (((-(sp.index * seg + jitter)) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
@@ -239,9 +239,24 @@
       else finish(sp);
     };
     anim = requestAnimationFrame(step);
+    // 画面が見えていない（アニメーションが止まる）ときでも、時間が来たら必ず結果にする
+    clearTimeout(finishTimer);
+    finishTimer = setTimeout(() => {
+      if (finishedId === sp.id) return;
+      cancelAnimationFrame(anim);
+      rot = end;
+      draw();
+      finish(sp);
+    }, duration * 1000 + 250);
   }
 
+  let finishTimer = null;
+  let finishedId = null;
+
   function finish(sp, silent) {
+    if (finishedId === sp.id) return;
+    finishedId = sp.id;
+    clearTimeout(finishTimer);
     resultEl.textContent = sp.result;
     resultEl.classList.add('show');
     if (!silent) Sound.result(soundOpts());
@@ -274,6 +289,7 @@
         }
         return;
       }
+      if (!sp) Sound.stopBgm(); // 念のため：ルーレットが終わっていたら BGM を止める
       if (!sp && !anim_running()) {
         // 待機中はテンプレの内容を表示
         const list = idleItems();

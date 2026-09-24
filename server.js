@@ -16,7 +16,7 @@ const SOUNDS_DIR = path.join(__dirname, 'sounds'); // ルーレット用の音�
 const SOUND_EXT = ['.mp3', '.wav', '.ogg', '.m4a'];
 
 // 画面側（public/app.js の APP_VERSION）と合わせる。ずれていると操作パネルに再起動の案内が出る
-const VERSION = 8;
+const VERSION = 9;
 
 const TEMPLATE_COUNT = 30;
 const CUSTOM_COUNT = 10;

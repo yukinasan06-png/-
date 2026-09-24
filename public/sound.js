@@ -86,28 +86,42 @@ const Sound = (() => {
     else builtin[kind](v);
   }
 
+  let bgmTimer = null;
+
+  // BGM を止める（フェードアウト）。画面が見えていなくても確実に止まるよう setInterval を使う
   function stopBgm(fadeMs = 600) {
+    clearTimeout(bgmTimer);
     const el = bgm;
     bgm = null;
     if (!el) return;
-    const from = el.volume;
-    const t0 = performance.now();
-    const step = now => {
-      const k = Math.min(1, (now - t0) / fadeMs);
-      el.volume = from * (1 - k);
-      if (k < 1) requestAnimationFrame(step);
-      else el.pause();
+    const halt = () => {
+      el.pause();
+      el.currentTime = 0;
+      el.src = '';
     };
-    requestAnimationFrame(step);
+    if (!fadeMs) return halt();
+    const from = el.volume;
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      const k = Math.min(1, (Date.now() - t0) / fadeMs);
+      el.volume = Math.max(0, from * (1 - k));
+      if (k >= 1) {
+        clearInterval(iv);
+        halt();
+      }
+    }, 40);
   }
 
   return {
-    // ルーレット開始（開始音＋BGM）
-    start(o) {
+    // ルーレット開始（開始音＋BGM）。maxMs 経ったら BGM は必ず止める（止め忘れ防止）
+    start(o, maxMs) {
+      stopBgm(0);
       if (!o || !o.soundOn) return;
       play('start', o);
-      stopBgm(0);
-      if (o.bgm && o.bgm !== 'none') bgm = playFile(o.bgm, vol(o), true);
+      if (o.bgm && o.bgm !== 'none') {
+        bgm = playFile(o.bgm, vol(o), true);
+        if (maxMs) bgmTimer = setTimeout(() => stopBgm(), maxMs);
+      }
     },
     tick(o) {
       if (o && o.soundOn && o.tick) builtin.tick(vol(o));
@@ -129,7 +143,7 @@ const Sound = (() => {
       if (kind === 'bgm') {
         if (!opt.bgm || opt.bgm === 'none') return false;
         bgm = playFile(opt.bgm, vol(opt), true);
-        setTimeout(() => stopBgm(), 5000);
+        bgmTimer = setTimeout(() => stopBgm(), 5000);
       } else if (kind === 'tick') {
         for (let i = 0; i < 8; i++) setTimeout(() => builtin.tick(vol(opt)), i * (60 + i * 25));
       } else {

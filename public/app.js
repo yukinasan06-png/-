@@ -1,7 +1,7 @@
 'use strict';
 
 // server.js の VERSION と合わせる
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 
 let S = null; // サーバーから受け取った状態
 let selectedTpl = 0;
