@@ -108,6 +108,10 @@ function renderCounters() {
       const src = S.settings.sources.likes;
       html += `<small>${src === 'off' ? '手動' : src === 'youtube' ? 'YouTube' : 'わんコメ'}${S.likes.raw != null ? ' / 総数 ' + fmt(S.likes.raw) : ''}</small>`;
     }
+    if (it.id === 'viewers') {
+      const src = S.settings.sources.viewers;
+      html += `<small>最高 ${fmt(it.peak)}・${src === 'off' ? '手動' : src === 'youtube' ? 'YouTube' : 'わんコメ'}</small>`;
+    }
     if (it.id === 'gift') {
       const src = S.settings.sources.gift;
       html += `<small>${src === 'off' ? '手動' : src === 'youtube' ? 'YouTube' : 'わんコメ'}</small>`;
@@ -133,7 +137,7 @@ function renderCounters() {
   $('#add-custom').disabled = !canAdd;
 }
 
-const ICONS = { likes: '💗', superchat: '💰', first: '🌱', comments: '💬', gift: '🎁', keyword: '✨' };
+const ICONS = { viewers: '👀', likes: '💗', superchat: '💰', first: '🌱', comments: '💬', gift: '🎁', keyword: '✨' };
 
 function buildCounter(it) {
   const el = document.createElement('div');
@@ -222,14 +226,14 @@ function renderMeter() {
   $('#meter-total').textContent = `合計 ${fmt(m.total)} pt`;
   $('#meter-detail').textContent = `満タン ${fmt(m.fired)} 回 ／ 次まで ${fmt(m.threshold - m.progress)} pt`;
   const rows = visibleItems().map(it => {
-    let p = (it.value || 0) * (it.points || 0);
+    let p = (it.id === 'viewers' ? it.peak || 0 : it.value || 0) * (it.points || 0);
     let extra = '';
     if (it.id === 'superchat' && it.yenPoints) {
       const y = ((it.amount || 0) / 100) * it.yenPoints;
       p += y;
       extra = ` + 金額 ${fmt(Math.floor(y))}`;
     }
-    return `<tr><td style="padding:4px 8px">${esc(it.name)}</td><td style="padding:4px 8px;text-align:right">${fmt(it.value)} × ${it.points}${extra}</td><td style="padding:4px 8px;text-align:right"><b>${fmt(Math.floor(p))}</b> pt</td></tr>`;
+    return `<tr><td style="padding:4px 8px">${esc(it.name)}</td><td style="padding:4px 8px;text-align:right">${it.id === 'viewers' ? '最高 ' + fmt(it.peak) : fmt(it.value)} × ${it.points}${extra}</td><td style="padding:4px 8px;text-align:right"><b>${fmt(Math.floor(p))}</b> pt</td></tr>`;
   });
   const html = rows.join('');
   const tbl = $('#meter-breakdown');

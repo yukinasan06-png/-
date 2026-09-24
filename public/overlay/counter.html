@@ -49,9 +49,10 @@
 <script src="/connector.js"></script>
 <script src="/overlay/common.js"></script>
 <script>
-  const ICONS = { likes: '💗', superchat: '💰', first: '🌱', comments: '💬', gift: '🎁', keyword: '✨' };
+  const ICONS = { viewers: '👀', likes: '💗', superchat: '💰', first: '🌱', comments: '💬', gift: '🎁', keyword: '✨' };
   const ids = (params.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean);
   const showAmount = params.get('amount') !== '0';
+  const showPeak = params.get('peak') !== '0';
   const list = document.getElementById('list');
   if (params.get('layout') === 'row') list.classList.add('row');
   let keys = '';
@@ -70,6 +71,7 @@
       const v = el.querySelector('.val');
       let html = fmt(it.value);
       if (it.id === 'superchat' && showAmount && it.amount) html += `<span class="sub">¥${fmt(it.amount)}</span>`;
+      if (it.id === 'viewers' && showPeak && it.peak) html += `<span class="sub">最高 ${fmt(it.peak)}</span>`;
       if (v.innerHTML !== html) {
         const had = v.innerHTML !== '';
         v.innerHTML = html;

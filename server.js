@@ -24,6 +24,8 @@ const HISTORY_MAX = 30;
 function defaultItems() {
   const items = [
     { id: 'likes', name: '高評価', kind: 'auto', value: 0, points: 1, show: true },
+    // 同接は増えたり減ったりするので、メーターには「最高同接 × pt」で加算する
+    { id: 'viewers', name: '同接', kind: 'auto', value: 0, peak: 0, points: 0, show: true },
     { id: 'superchat', name: 'スパチャ', kind: 'auto', value: 0, points: 10, show: true, amount: 0, yenPoints: 0 },
     { id: 'first', name: '初見コメント', kind: 'auto', value: 0, points: 5, show: true },
     { id: 'comments', name: 'コメント数', kind: 'auto', value: 0, points: 1, show: true },
@@ -49,8 +51,8 @@ function defaultState() {
     settings: {
       onecomme: { enabled: true, host: '127.0.0.1', port: 11180, excludeOwner: true },
       youtube: { apiKey: '', video: '', channelId: '', likeInterval: 30, chatInterval: 15 },
-      // likes / gift の取得元: 'youtube' | 'onecomme' | 'off'
-      sources: { likes: 'youtube', gift: 'youtube' },
+      // likes / gift / viewers の取得元: 'youtube' | 'onecomme' | 'off'
+      sources: { likes: 'youtube', gift: 'youtube', viewers: 'youtube' },
       meter: { title: '盛り上がりメーター', threshold: 100, autoSpin: true },
       roulette: { duration: 6, hold: 5, shuffleEachSpin: false, alwaysShow: false },
     },
@@ -138,7 +140,7 @@ function totalPoints() {
   let t = 0;
   for (const it of state.items) {
     if (!itemActive(it)) continue;
-    t += (it.value || 0) * (it.points || 0);
+    t += (it.id === 'viewers' ? it.peak || 0 : it.value || 0) * (it.points || 0);
     if (it.id === 'superchat' && it.yenPoints) t += ((it.amount || 0) / 100) * it.yenPoints;
   }
   return Math.floor(t);
@@ -342,6 +344,9 @@ function onMessage(client, msg) {
       break;
     case 'likes':
       if (client === leader) updateLikes(Number(msg.count) || 0, msg.source, msg.videoId);
+      break;
+    case 'viewers':
+      if (client === leader) updateViewers(Number(msg.count) || 0);
       break;
     case 'gifts':
       if (client === leader) handleYoutubeGifts(msg.gifts);
@@ -553,6 +558,33 @@ function handleOneCommeMessage(msg) {
     const n = findLikeCount(data);
     if (n !== null) updateLikes(n, 'onecomme');
   }
+  if (type === 'meta' && state.settings.sources.viewers === 'onecomme') {
+    const n = findCount(data, ['viewer', 'viewers', 'concurrentViewers', 'viewerCount']);
+    if (n !== null) updateViewers(n);
+  }
+}
+
+function findCount(obj, keys, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 5) return null;
+  for (const key of keys) {
+    if (typeof obj[key] === 'number') return obj[key];
+    if (typeof obj[key] === 'string' && /^\d+$/.test(obj[key])) return Number(obj[key]);
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === 'object') {
+      const r = findCount(v, keys, depth + 1);
+      if (r !== null) return r;
+    }
+  }
+  return null;
+}
+
+// 同接（現在値と最高値）
+function updateViewers(n) {
+  const it = getItem('viewers');
+  it.value = Math.max(0, Math.trunc(n));
+  it.peak = Math.max(it.peak || 0, it.value);
+  changed();
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +654,7 @@ function resetCounters() {
   for (const it of state.items) {
     it.value = 0;
     if (it.id === 'superchat') it.amount = 0;
+    if (it.id === 'viewers') it.peak = 0;
   }
   state.likes.base = state.likes.raw || 0;
   state.meter.fired = 0;
@@ -636,6 +669,7 @@ const actions = {
     const before = it.value || 0;
     it.value = Math.max(0, before + d);
     if (id === 'likes') state.likes.base = (state.likes.base || 0) - (it.value - before);
+    if (id === 'viewers') it.peak = Math.max(it.peak || 0, it.value);
   },
   setValue({ id, value }) {
     const it = getItem(id);
@@ -643,6 +677,7 @@ const actions = {
     const before = it.value || 0;
     it.value = Math.max(0, Math.trunc(num(value, 0)));
     if (id === 'likes') state.likes.base = (state.likes.base || 0) - (it.value - before);
+    if (id === 'viewers') it.peak = it.value;
   },
   updateItem({ id, patch }) {
     const it = getItem(id);
@@ -657,6 +692,7 @@ const actions = {
     if (!it) throw new Error('項目がありません');
     it.value = 0;
     if (id === 'superchat') it.amount = 0;
+    if (id === 'viewers') it.peak = 0;
     if (id === 'likes') state.likes.base = state.likes.raw || 0;
   },
   updateSettings({ settings }) {
@@ -683,6 +719,7 @@ const actions = {
       const ok = ['youtube', 'onecomme', 'off'];
       if (ok.includes(s.sources.likes)) cur.sources.likes = s.sources.likes;
       if (ok.includes(s.sources.gift)) cur.sources.gift = s.sources.gift;
+      if (ok.includes(s.sources.viewers)) cur.sources.viewers = s.sources.viewers;
     }
     if (s.meter) {
       const m = s.meter;
@@ -754,6 +791,10 @@ const actions = {
       base.price = Math.max(1, num(price, 500));
     }
     if (kind === 'gift') base.giftCount = Math.max(1, clampInt(count, 1, 1000, 5));
+    if (kind === 'viewers') {
+      updateViewers(clampInt(count, 0, 10000000, 10));
+      return;
+    }
     if (kind === 'like') {
       const n = clampInt(count, 1, 100000, 1);
       getItem('likes').value += n;

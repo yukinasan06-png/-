@@ -203,7 +203,7 @@ const Fetcher = (() => {
     yt.chatError = null;
     const cfg = Hub.state.settings.youtube;
     const src = sources();
-    if (src.likes !== 'youtube' && src.gift !== 'youtube') return status('youtube', 'off', '未使用（取得元がYouTube以外）');
+    if (src.likes !== 'youtube' && src.gift !== 'youtube' && src.viewers !== 'youtube') return status('youtube', 'off', '未使用（取得元がYouTube以外）');
     if (!cfg.apiKey) return status('youtube', 'off', 'APIキー未設定');
 
     let videoId = parseVideoId(cfg.video);
@@ -246,6 +246,15 @@ const Fetcher = (() => {
         const n = Number(v.statistics.likeCount) || 0;
         Hub.send({ cmd: 'likes', count: n, source: 'youtube', videoId });
         msgs.push(`高評価 ${n}`);
+      }
+      if (sources().viewers === 'youtube') {
+        const cv = v.liveStreamingDetails && v.liveStreamingDetails.concurrentViewers;
+        if (cv !== undefined) {
+          Hub.send({ cmd: 'viewers', count: Number(cv) || 0 });
+          msgs.push(`同接 ${cv}`);
+        } else {
+          msgs.push('同接なし（配信前/終了？）');
+        }
       }
       const chatId = v.liveStreamingDetails && v.liveStreamingDetails.activeLiveChatId;
       if (sources().gift === 'youtube') {

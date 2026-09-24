@@ -43,7 +43,7 @@
         「自動」の項目はわんコメ / YouTube から自動で数えます（手動で ± 修正もできます）。
         「カスタム」は自由に名前を付けて手動で数える項目です（最大10個）。反応ワードを入れるとコメントからも自動加算されます。名前・pt・言葉などは各項目の <b>⚙</b> から変更できます。<br>
         キーボード: <kbd>1</kbd>〜<kbd>0</kbd> でカスタム1〜10 を +1、<kbd>Shift</kbd>+数字で −1（入力欄にフォーカスがないとき）。
-        「pt」はメーターに加算されるポイント（1回あたり）です。
+        「pt」はメーターに加算されるポイント（1回あたり）です。同接は「最高同接 × pt」で加算されます（初期値は0pt＝加算なし）。
       </p>
       <div class="counters" id="counters"></div>
     </div>
@@ -155,7 +155,7 @@
       <p class="hint" id="oc-status"></p>
     </div>
     <div class="card">
-      <h2>YouTube 連携（高評価・メンギフ）</h2>
+      <h2>YouTube 連携（同接・高評価・メンギフ）</h2>
       <p class="hint">
         高評価数とメンバーシップギフトは YouTube Data API v3 から直接取得します。Google Cloud Console で API キーを作成し（YouTube Data API v3 を有効化）、下に入力してください。<br>
         配信URLを空にしてチャンネルIDを入れると、配信中のライブを自動検索します（検索は1回100ユニット消費）。
@@ -175,6 +175,12 @@
       <div class="form-grid" id="src-form">
         <label>高評価</label>
         <select data-key="likes">
+          <option value="youtube">YouTube API（推奨）</option>
+          <option value="onecomme">わんコメ（配信情報から）</option>
+          <option value="off">取得しない（手動）</option>
+        </select>
+        <label>同接</label>
+        <select data-key="viewers">
           <option value="youtube">YouTube API（推奨）</option>
           <option value="onecomme">わんコメ（配信情報から）</option>
           <option value="off">取得しない（手動）</option>
@@ -201,11 +207,11 @@
       <div id="urls"></div>
       <h3 style="font-size:14px">カスタマイズ（URLの後ろに付けるパラメータ）</h3>
       <ul class="hint">
-        <li><b>カウンター</b>：<code>?ids=likes,superchat,custom1</code> 表示する項目を指定（未指定なら「OBS表示」がONの項目）／ <code>&amp;layout=row</code> 横並び（正方形タイル） ／ <code>&amp;scale=1.5</code> 拡大 ／ <code>&amp;amount=0</code> スパチャ金額を隠す</li>
+        <li><b>カウンター</b>：<code>?ids=likes,superchat,custom1</code> 表示する項目を指定（未指定なら「OBS表示」がONの項目）／ <code>&amp;layout=row</code> 横並び（正方形タイル） ／ <code>&amp;scale=1.5</code> 拡大 ／ <code>&amp;amount=0</code> スパチャ金額を隠す ／ <code>&amp;peak=0</code> 最高同接を隠す</li>
         <li><b>メーター</b>：<code>?scale=1.5</code> 拡大 ／ <code>&amp;numbers=0</code> 数値を隠す ／ <code>&amp;vertical=1</code> 縦メーター</li>
         <li><b>ルーレット</b>：<code>?size=600</code> 円の大きさ(px) ／ <code>&amp;sound=0</code> 効果音なし</li>
       </ul>
-      <p class="hint">項目ID：likes（高評価）, superchat（スパチャ）, first（初見）, comments（コメント数）, gift（メンギフ）, keyword（特定の言葉）, custom1〜custom10</p>
+      <p class="hint">項目ID：viewers（同接）, likes（高評価）, superchat（スパチャ）, first（初見）, comments（コメント数）, gift（メンギフ）, keyword（特定の言葉）, custom1〜custom10</p>
       <p class="hint">外部ツール（Stream Deck など）から操作：<code>/api/spin</code> でルーレット、<code>/api/add?id=custom1&amp;n=1</code> で加算。</p>
     </div>
   </section>
@@ -228,6 +234,7 @@
         <input type="number" id="test-count" value="5" style="width:110px"> 個／件
         <button data-sim="gift">メンギフ</button>
         <button data-sim="like">高評価</button>
+        <button data-sim="viewers">同接をこの数にする</button>
       </div>
     </div>
   </section>
