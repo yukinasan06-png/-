@@ -143,6 +143,12 @@ section.tab.active { display: block; animation: fadein .3s; }
 .counter .opts { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; font-size: 12px; color: var(--muted); font-weight: 700; }
 .counter .opts input[type="text"], .counter .opts input[type="number"] { width: 100%; }
 .counter .foot { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
+.counter { cursor: grab; }
+.counter.open { cursor: default; }
+.counter.dragging { opacity: .4; transform: scale(.95); }
+.counter.drop-before { box-shadow: -6px 0 0 -1px var(--accent), 0 4px 14px rgba(0, 0, 0, .04); }
+.counter.drop-after { box-shadow: 6px 0 0 -1px var(--accent), 0 4px 14px rgba(0, 0, 0, .04); }
+.counter .order-btns { display: flex; gap: 6px; }
 .counter.flash .value { animation: flash .5s; }
 @keyframes flash { 0% { color: var(--c); transform: scale(1.12); } 60% { transform: scale(.97); } 100% { transform: scale(1); } }
 

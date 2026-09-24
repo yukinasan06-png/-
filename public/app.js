@@ -85,6 +85,23 @@ function renderHeader() {
 }
 
 let counterKeys = '';
+let openCounterId = null;
+let dragId = null;
+
+// 並び順を変更してサーバーへ送る（表示中の項目の順番＋非表示の項目は後ろ）
+function sendOrder(visibleIds) {
+  const rest = S.items.map(i => i.id).filter(id => !visibleIds.includes(id));
+  act('setOrder', { order: [...visibleIds, ...rest] });
+}
+
+function moveItem(id, dir) {
+  const ids = visibleItems().map(i => i.id);
+  const i = ids.indexOf(id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  sendOrder(ids);
+}
 function visibleItems() {
   return S.items.filter(it => it.kind === 'auto' || it.enabled);
 }
@@ -97,6 +114,8 @@ function renderCounters() {
     counterKeys = keys;
     wrap.innerHTML = '';
     for (const it of items) wrap.appendChild(buildCounter(it));
+    // 並べ替え後も設定の吹き出しを開いたままにする
+    if (openCounterId) wrap.querySelector(`[data-id="${openCounterId}"]`)?.classList.add('open');
   }
   for (const it of items) {
     const card = wrap.querySelector(`[data-id="${it.id}"]`);
@@ -165,6 +184,7 @@ function buildCounter(it) {
         ${it.id === 'superchat' ? '<span>pt / 100円</span><input class="yen" type="number" step="any">' : ''}
         ${hasWords ? `<span>${it.id === 'keyword' ? '言葉' : '反応ワード'}</span><input class="words" type="text" placeholder="カンマ区切り（例: 草, 888）">` : ''}
         <span>OBS表示</span><label><input class="show" type="checkbox"></label>
+        <span>並び順</span><span class="order-btns"><button class="small move-left" title="前へ">◀ 前へ</button><button class="small move-right" title="後ろへ">後ろへ ▶</button></span>
       </div>
       <div class="foot">
         <button class="small set">数値を指定</button>
@@ -177,8 +197,48 @@ function buildCounter(it) {
     const open = !el.classList.contains('open');
     $$('.counter.open').forEach(c => c.classList.remove('open'));
     el.classList.toggle('open', open);
+    openCounterId = open ? it.id : null;
   };
-  el.querySelector('.close').onclick = () => el.classList.remove('open');
+  el.querySelector('.close').onclick = () => {
+    el.classList.remove('open');
+    openCounterId = null;
+  };
+  el.querySelector('.move-left').onclick = () => moveItem(it.id, -1);
+  el.querySelector('.move-right').onclick = () => moveItem(it.id, 1);
+
+  // ドラッグ＆ドロップで並べ替え
+  el.draggable = true;
+  el.addEventListener('dragstart', e => {
+    if (el.classList.contains('open') || e.target.closest('input, textarea')) return e.preventDefault();
+    dragId = it.id;
+    el.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try {
+      e.dataTransfer.setData('text/plain', it.id);
+    } catch (err) {}
+  });
+  el.addEventListener('dragend', () => {
+    dragId = null;
+    $$('.counter').forEach(c => c.classList.remove('dragging', 'drop-before', 'drop-after'));
+  });
+  el.addEventListener('dragover', e => {
+    if (!dragId || dragId === it.id) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    const after = e.clientX > r.left + r.width / 2;
+    el.classList.toggle('drop-after', after);
+    el.classList.toggle('drop-before', !after);
+  });
+  el.addEventListener('dragleave', () => el.classList.remove('drop-before', 'drop-after'));
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    if (!dragId || dragId === it.id) return;
+    const after = el.classList.contains('drop-after');
+    const ids = visibleItems().map(i => i.id).filter(id => id !== dragId);
+    const at = ids.indexOf(it.id) + (after ? 1 : 0);
+    ids.splice(at, 0, dragId);
+    sendOrder(ids);
+  });
   el.querySelector('.settings').addEventListener('click', e => e.stopPropagation());
   const id = it.id;
   el.querySelector('.minus').onclick = () => act('adjust', { id, delta: -1 });
@@ -539,7 +599,10 @@ function setup() {
 }
 
 // 設定の吹き出しは外側をクリックで閉じる
-document.addEventListener('click', () => $$('.counter.open').forEach(c => c.classList.remove('open')));
+document.addEventListener('click', () => {
+  $$('.counter.open').forEach(c => c.classList.remove('open'));
+  openCounterId = null;
+});
 
 setup();
 connect();

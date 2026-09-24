@@ -59,6 +59,7 @@ function defaultState() {
     meter: { fired: 0 },
     likes: { base: 0, raw: null, videoId: '' },
     roulette: { templates: defaultTemplates(), active: 0, queue: 0, history: [] },
+    order: [], // 項目の表示順（id の並び。空なら既定の順）
   };
 }
 
@@ -86,6 +87,7 @@ function loadState() {
     }
     Object.assign(s.meter, saved.meter || {});
     Object.assign(s.likes, saved.likes || {});
+    if (Array.isArray(saved.order)) s.order = saved.order.filter(id => s.items.some(i => i.id === id));
     if (saved.roulette) {
       const r = saved.roulette;
       if (Array.isArray(r.templates)) {
@@ -132,6 +134,15 @@ function getItem(id) {
   return state.items.find(i => i.id === id);
 }
 
+// 表示順に並べた項目一覧（order に無い項目は既定の順で後ろへ）
+function orderedItems() {
+  const pos = id => {
+    const i = state.order.indexOf(id);
+    return i < 0 ? 1000 + state.items.findIndex(x => x.id === id) : i;
+  };
+  return state.items.slice().sort((a, b) => pos(a.id) - pos(b.id));
+}
+
 function itemActive(it) {
   return it.kind === 'auto' || it.enabled;
 }
@@ -165,7 +176,7 @@ function publicState() {
   const total = totalPoints();
   const threshold = Math.max(1, state.settings.meter.threshold);
   return {
-    items: state.items,
+    items: orderedItems(),
     settings: state.settings,
     likes: state.likes,
     meter: {
@@ -678,6 +689,12 @@ const actions = {
     it.value = Math.max(0, Math.trunc(num(value, 0)));
     if (id === 'likes') state.likes.base = (state.likes.base || 0) - (it.value - before);
     if (id === 'viewers') it.peak = it.value;
+  },
+  setOrder({ order }) {
+    if (!Array.isArray(order)) throw new Error('並び順が不正です');
+    const ids = [...new Set(order.map(String))].filter(id => getItem(id));
+    for (const it of state.items) if (!ids.includes(it.id)) ids.push(it.id);
+    state.order = ids;
   },
   updateItem({ id, patch }) {
     const it = getItem(id);
