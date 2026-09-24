@@ -119,6 +119,8 @@ function renderCounters() {
       card.classList.add('flash');
     }
     valEl.dataset.v = String(it.value);
+    card.querySelector('.title').textContent = it.name;
+    card.title = it.name;
     setField(card.querySelector('.name'), it.name);
     setField(card.querySelector('.points'), it.points);
     setField(card.querySelector('.show'), it.show);
@@ -143,25 +145,37 @@ function buildCounter(it) {
   el.innerHTML = `
     <div class="top">
       <span class="icon">${ICONS[it.id] || '⭐'}</span>
-      <input class="name" type="text" maxlength="40">
-      <span class="tag">${isCustom ? 'カスタム' + num : '自動'}</span>
+      <span class="title"></span>
+      <button class="gear" title="設定">⚙</button>
     </div>
+    <div class="value"></div>
     <div class="value-row">
       <button class="minus" title="−1">−</button>
-      <div class="value"></div>
       <button class="plus" title="+1">＋</button>
     </div>
-    <div class="opts">
-      <span>pt / 回</span><input class="points" type="number" step="any">
-      ${it.id === 'superchat' ? '<span>pt / 100円</span><input class="yen" type="number" step="any">' : ''}
-      ${hasWords ? `<span>${it.id === 'keyword' ? '言葉' : '反応ワード'}</span><input class="words" type="text" placeholder="カンマ区切り（例: 草, 888）">` : ''}
-      <span>OBS表示</span><label><input class="show" type="checkbox"></label>
-    </div>
-    <div class="foot">
-      <button class="small set">数値を指定</button>
-      <button class="small reset">0に戻す</button>
-      ${isCustom ? '<button class="small danger remove">項目を削除</button>' : ''}
+    <div class="settings">
+      <div class="settings-head"><b>${isCustom ? 'カスタム' + num : '自動'}の設定</b><button class="small close">閉じる</button></div>
+      <div class="opts">
+        <span>名前</span><input class="name" type="text" maxlength="40">
+        <span>pt / 回</span><input class="points" type="number" step="any">
+        ${it.id === 'superchat' ? '<span>pt / 100円</span><input class="yen" type="number" step="any">' : ''}
+        ${hasWords ? `<span>${it.id === 'keyword' ? '言葉' : '反応ワード'}</span><input class="words" type="text" placeholder="カンマ区切り（例: 草, 888）">` : ''}
+        <span>OBS表示</span><label><input class="show" type="checkbox"></label>
+      </div>
+      <div class="foot">
+        <button class="small set">数値を指定</button>
+        <button class="small reset">0に戻す</button>
+        ${isCustom ? '<button class="small danger remove">項目を削除</button>' : ''}
+      </div>
     </div>`;
+  el.querySelector('.gear').onclick = e => {
+    e.stopPropagation();
+    const open = !el.classList.contains('open');
+    $$('.counter.open').forEach(c => c.classList.remove('open'));
+    el.classList.toggle('open', open);
+  };
+  el.querySelector('.close').onclick = () => el.classList.remove('open');
+  el.querySelector('.settings').addEventListener('click', e => e.stopPropagation());
   const id = it.id;
   el.querySelector('.minus').onclick = () => act('adjust', { id, delta: -1 });
   el.querySelector('.plus').onclick = () => act('adjust', { id, delta: 1 });
@@ -517,6 +531,9 @@ function setup() {
     act('adjust', { id: it.id, delta: e.shiftKey ? -1 : 1 });
   });
 }
+
+// 設定の吹き出しは外側をクリックで閉じる
+document.addEventListener('click', () => $$('.counter.open').forEach(c => c.classList.remove('open')));
 
 setup();
 connect();
