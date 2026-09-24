@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>カウンター</title>
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif; color: #fff; padding: 10px; }
+  #list { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  #list.row { flex-direction: row; flex-wrap: wrap; }
+  .item {
+    display: flex; align-items: center; gap: 14px; min-width: 240px;
+    background: linear-gradient(90deg, rgba(20,20,35,.78), rgba(40,20,45,.62));
+    border: 2px solid rgba(255,255,255,.18); border-left: 6px solid #ff6fa3;
+    border-radius: 12px; padding: 6px 16px 6px 12px;
+    text-shadow: 0 2px 4px rgba(0,0,0,.6);
+  }
+  .item .name { font-size: 20px; font-weight: bold; flex: 1; white-space: nowrap; }
+  .item .val { font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; }
+  .item .sub { font-size: 14px; opacity: .85; margin-left: 4px; }
+  .item.pop .val { animation: pop .6s ease-out; }
+  @keyframes pop { 0% { transform: scale(1.5); color: #ffe066; } 100% { transform: scale(1); color: #fff; } }
+  .item:nth-child(6n+1) { border-left-color: #ff6fa3; }
+  .item:nth-child(6n+2) { border-left-color: #ffb84d; }
+  .item:nth-child(6n+3) { border-left-color: #6fd3ff; }
+  .item:nth-child(6n+4) { border-left-color: #7dff9b; }
+  .item:nth-child(6n+5) { border-left-color: #c49bff; }
+  .item:nth-child(6n+6) { border-left-color: #ff8a6f; }
+</style>
+</head>
+<body>
+<div id="list"></div>
+<script src="/overlay/common.js"></script>
+<script>
+  const ids = (params.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean);
+  const showAmount = params.get('amount') !== '0';
+  const list = document.getElementById('list');
+  if (params.get('layout') === 'row') list.classList.add('row');
+  let keys = '';
+  subscribe(S => {
+    let items = S.items.filter(it => it.kind === 'auto' || it.enabled);
+    if (ids.length) items = ids.map(id => items.find(i => i.id === id)).filter(Boolean);
+    else items = items.filter(i => i.show);
+    const k = items.map(i => i.id).join(',');
+    if (k !== keys) {
+      keys = k;
+      list.innerHTML = items.map(i => `<div class="item" data-id="${i.id}"><span class="name"></span><span class="val"></span></div>`).join('');
+    }
+    for (const it of items) {
+      const el = list.querySelector(`[data-id="${it.id}"]`);
+      el.querySelector('.name').textContent = it.name;
+      const v = el.querySelector('.val');
+      let html = fmt(it.value);
+      if (it.id === 'superchat' && showAmount && it.amount) html += `<span class="sub">¥${fmt(it.amount)}</span>`;
+      if (v.innerHTML !== html) {
+        const had = v.innerHTML !== '';
+        v.innerHTML = html;
+        if (had) {
+          el.classList.remove('pop');
+          void el.offsetWidth;
+          el.classList.add('pop');
+        }
+      }
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>配信カウンター 操作パネル</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>🎛 配信カウンター</h1>
+  <div class="mini-meter">
+    <span id="hdr-title">盛り上がりメーター</span>
+    <div class="bar"><div class="fill" id="hdr-fill"></div></div>
+    <span class="label" id="hdr-label">0 / 100</span>
+  </div>
+  <button class="primary" id="hdr-spin">🎡 ルーレット <span id="hdr-queue"></span></button>
+  <div class="status">
+    <span title="" id="st-oc"><span class="dot"></span>わんコメ</span>
+    <span title="" id="st-yt"><span class="dot"></span>YouTube</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="counter" class="active">カウンター</button>
+  <button data-tab="meter">メーター</button>
+  <button data-tab="roulette">ルーレット</button>
+  <button data-tab="connect">接続設定</button>
+  <button data-tab="obs">OBS用URL</button>
+  <button data-tab="test">テスト</button>
+</nav>
+
+<main>
+  <!-- カウンター -->
+  <section class="tab active" id="tab-counter">
+    <div class="card">
+      <h2>カウンター
+        <span class="spacer"></span>
+        <button id="add-custom">＋ カスタム項目を追加</button>
+        <button class="danger" id="reset-all">全カウンターをリセット</button>
+      </h2>
+      <p class="hint">
+        「自動」の項目はわんコメ / YouTube から自動で数えます（手動で ± 修正もできます）。
+        「カスタム」は自由に名前を付けて手動で数える項目です（最大10個）。反応ワードを入れるとコメントからも自動加算されます。<br>
+        キーボード: <kbd>1</kbd>〜<kbd>0</kbd> でカスタム1〜10 を +1、<kbd>Shift</kbd>+数字で −1（入力欄にフォーカスがないとき）。
+        「pt」はメーターに加算されるポイント（1回あたり）です。
+      </p>
+      <div class="counters" id="counters"></div>
+    </div>
+  </section>
+
+  <!-- メーター -->
+  <section class="tab" id="tab-meter">
+    <div class="card">
+      <h2>盛り上がりメーター</h2>
+      <div class="form-grid" id="meter-form">
+        <label>メーターのタイトル</label>
+        <input data-key="title" type="text">
+        <label>満タンになるポイント</label>
+        <div class="row" style="margin:0"><input data-key="threshold" type="number" min="1" style="width:140px"> <span class="hint">pt ごとに満タン</span></div>
+        <label>満タンでルーレット</label>
+        <label style="color:inherit"><input data-key="autoSpin" type="checkbox"> 満タンになったら自動でルーレットを回す</label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="meter-save">保存</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>現在の状態</h2>
+      <div class="row"><b id="meter-total" style="font-size:22px">0 pt</b><span class="hint" id="meter-detail"></span></div>
+      <table style="border-collapse:collapse;width:100%;max-width:520px" id="meter-breakdown"></table>
+      <p class="hint">各項目のポイントは「カウンター」タブの pt 欄で変更できます。スパチャは「1回あたり」と「金額100円あたり」の両方を設定できます。</p>
+    </div>
+  </section>
+
+  <!-- ルーレット -->
+  <section class="tab" id="tab-roulette">
+    <div class="roulette-layout">
+      <div>
+        <div class="card">
+          <h2>テンプレート（30個）<span class="spacer"></span><span class="hint">★ = 使用中</span></h2>
+          <div class="tpl-grid" id="tpl-grid"></div>
+          <div class="row">
+            <span class="hint" id="tpl-no"></span>
+            <input type="text" id="tpl-name" placeholder="テンプレ名" style="flex:1">
+          </div>
+          <textarea id="tpl-items" rows="12" placeholder="1行に1項目ずつ入力（一括入力：Excel などからそのまま貼り付けOK）"></textarea>
+          <div class="row" style="margin-top:8px">
+            <input type="text" id="tpl-add" placeholder="1項目を追加" style="flex:1">
+            <button id="tpl-add-btn">追加</button>
+          </div>
+          <div class="row">
+            <button class="primary" id="tpl-save">保存</button>
+            <button id="tpl-shuffle">🔀 シャッフル</button>
+            <button id="tpl-use">★ このテンプレを使う</button>
+            <button id="tpl-dedupe">重複を削除</button>
+            <button class="danger" id="tpl-clear">空にする</button>
+            <span class="hint" id="tpl-count"></span>
+          </div>
+          <p class="hint">シャッフルは並び順（ルーレット上の配置）を入れ替えます。同じ項目を複数行入れると当たりやすくなります。</p>
+        </div>
+        <div class="card">
+          <h2>一括インポート / エクスポート</h2>
+          <p class="hint">全テンプレをまとめて入力できます。<code>## テンプレ名</code> の行で区切り、その下に1行1項目で書きます。<code>##</code> ブロックの順にテンプレ1から上書きされます。</p>
+          <textarea id="bulk-text" rows="8" placeholder="## 罰ゲーム&#10;歌う&#10;モノマネ&#10;## ご褒美&#10;好きなお菓子&#10;..."></textarea>
+          <div class="row" style="margin-top:8px">
+            <button id="bulk-export">現在の内容を書き出す</button>
+            <button class="primary" id="bulk-import">一括反映</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h2>ルーレット<span class="spacer"></span><span class="badge" id="rl-queue" hidden></span></h2>
+          <div class="row">
+            <button class="primary big" id="rl-spin" style="flex:1">🎡 回す</button>
+          </div>
+          <div class="result-box" id="rl-result">—</div>
+          <div class="row" style="margin-top:8px">
+            <span class="hint" id="rl-active"></span>
+            <span class="spacer" style="flex:1"></span>
+            <button class="small" id="rl-clear-queue">待機をクリア</button>
+          </div>
+          <iframe class="preview-frame" id="rl-preview" src="/overlay/roulette.html?preview=1"></iframe>
+        </div>
+        <div class="card">
+          <h2>ルーレット設定</h2>
+          <div class="form-grid" id="rl-form" style="grid-template-columns: 140px 1fr">
+            <label>回転時間（秒）</label><input data-key="duration" type="number" min="1" max="60" step="0.5">
+            <label>結果表示（秒）</label><input data-key="hold" type="number" min="0" max="120" step="0.5">
+            <label>毎回シャッフル</label><label style="color:inherit"><input data-key="shuffleEachSpin" type="checkbox"> 回すたびに並びを混ぜる</label>
+            <label>常に表示</label><label style="color:inherit"><input data-key="alwaysShow" type="checkbox"> 回していない時もOBSに表示</label>
+          </div>
+          <div class="row" style="margin-top:10px"><button class="primary" id="rl-save">保存</button></div>
+        </div>
+        <div class="card">
+          <h2>履歴<span class="spacer"></span><button class="small" id="rl-clear-history">クリア</button></h2>
+          <ul class="history" id="rl-history"></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 接続 -->
+  <section class="tab" id="tab-connect">
+    <div class="card">
+      <h2>わんコメ連携</h2>
+      <p class="hint">コメント数・初見コメント・スパチャ・特定の言葉・カスタム項目の反応ワードは、わんコメから取得します。わんコメを起動しておけば自動で接続します（初期ポート 11180）。</p>
+      <div class="form-grid" id="oc-form">
+        <label>わんコメ連携</label><label style="color:inherit"><input data-key="enabled" type="checkbox"> 有効</label>
+        <label>ホスト</label><input data-key="host" type="text">
+        <label>ポート</label><input data-key="port" type="number">
+        <label>配信者本人</label><label style="color:inherit"><input data-key="excludeOwner" type="checkbox"> 配信者本人のコメントは数えない</label>
+      </div>
+      <p class="hint" id="oc-status"></p>
+    </div>
+    <div class="card">
+      <h2>YouTube 連携（高評価・メンギフ）</h2>
+      <p class="hint">
+        高評価数とメンバーシップギフトは YouTube Data API v3 から直接取得します。Google Cloud Console で API キーを作成し（YouTube Data API v3 を有効化）、下に入力してください。<br>
+        配信URLを空にしてチャンネルIDを入れると、配信中のライブを自動検索します（検索は1回100ユニット消費）。
+      </p>
+      <div class="form-grid" id="yt-form">
+        <label>APIキー</label><input data-key="apiKey" type="password" autocomplete="off">
+        <label>配信URL / 動画ID</label><input data-key="video" type="text" placeholder="https://www.youtube.com/watch?v=xxxxxxxxxxx">
+        <label>チャンネルID（任意）</label><input data-key="channelId" type="text" placeholder="UCxxxxxxxxxxxxxxxxxxxxxx">
+        <label>高評価の取得間隔（秒）</label><input data-key="likeInterval" type="number" min="10">
+        <label>チャットの取得間隔（秒）</label><input data-key="chatInterval" type="number" min="5">
+      </div>
+      <p class="hint">API の1日の上限（初期 10,000 ユニット）の目安：高評価30秒間隔 ≒ 120/時、チャット15秒間隔 ≒ 1,200/時。長時間配信ではチャット間隔を長めにしてください。</p>
+      <p class="hint" id="yt-status"></p>
+    </div>
+    <div class="card">
+      <h2>取得元の切り替え</h2>
+      <div class="form-grid" id="src-form">
+        <label>高評価</label>
+        <select data-key="likes">
+          <option value="youtube">YouTube API（推奨）</option>
+          <option value="onecomme">わんコメ（配信情報から）</option>
+          <option value="off">取得しない（手動）</option>
+        </select>
+        <label>メンギフ</label>
+        <select data-key="gift">
+          <option value="youtube">YouTube API（推奨）</option>
+          <option value="onecomme">わんコメ（コメントから判定）</option>
+          <option value="off">取得しない（手動）</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="conn-save">接続設定を保存して再接続</button>
+        <button id="likes-base">高評価を今の数から数え直す</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- OBS -->
+  <section class="tab" id="tab-obs">
+    <div class="card">
+      <h2>OBS ブラウザソース用URL</h2>
+      <p class="hint">OBS の「ソース」→「ブラウザ」で下のURLを貼り付けてください。背景は透明です。</p>
+      <div id="urls"></div>
+      <h3 style="font-size:14px">カスタマイズ（URLの後ろに付けるパラメータ）</h3>
+      <ul class="hint">
+        <li><b>カウンター</b>：<code>?ids=likes,superchat,custom1</code> 表示する項目を指定（未指定なら「OBS表示」がONの項目）／ <code>&amp;layout=row</code> 横並び ／ <code>&amp;scale=1.5</code> 拡大 ／ <code>&amp;amount=0</code> スパチャ金額を隠す</li>
+        <li><b>メーター</b>：<code>?scale=1.5</code> 拡大 ／ <code>&amp;numbers=0</code> 数値を隠す ／ <code>&amp;vertical=1</code> 縦メーター</li>
+        <li><b>ルーレット</b>：<code>?size=600</code> 円の大きさ(px) ／ <code>&amp;sound=0</code> 効果音なし</li>
+      </ul>
+      <p class="hint">項目ID：likes（高評価）, superchat（スパチャ）, first（初見）, comments（コメント数）, gift（メンギフ）, keyword（特定の言葉）, custom1〜custom10</p>
+      <p class="hint">外部ツール（Stream Deck など）から操作：<code>/api/spin</code> でルーレット、<code>/api/add?id=custom1&amp;n=1</code> で加算。</p>
+    </div>
+  </section>
+
+  <!-- テスト -->
+  <section class="tab" id="tab-test">
+    <div class="card">
+      <h2>動作テスト</h2>
+      <p class="hint">配信せずにカウンター・メーター・ルーレットの動きを確認できます（実際のカウントに加算されます。確認後はリセットしてください）。</p>
+      <div class="row">
+        <input type="text" id="test-text" placeholder="テストコメント本文" value="草" style="flex:1">
+        <button data-sim="comment">コメント</button>
+        <button data-sim="first">初見コメント</button>
+      </div>
+      <div class="row">
+        <input type="number" id="test-price" value="500" style="width:110px"> 円
+        <button data-sim="superchat">スパチャ</button>
+      </div>
+      <div class="row">
+        <input type="number" id="test-count" value="5" style="width:110px"> 個／件
+        <button data-sim="gift">メンギフ</button>
+        <button data-sim="like">高評価</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>

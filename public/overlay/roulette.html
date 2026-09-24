@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ルーレット</title>
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif; color: #fff; }
+  #stage { display: flex; flex-direction: column; align-items: center; padding: 10px; transition: opacity .6s, transform .6s; }
+  #stage.hidden { opacity: 0; transform: scale(.85); }
+  .tpl { font-size: 22px; font-weight: 900; text-shadow: 0 2px 5px rgba(0,0,0,.8); margin-bottom: 4px; min-height: 30px; }
+  .wheel-wrap { position: relative; }
+  canvas { display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,.45)); }
+  .pointer {
+    position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
+    width: 0; height: 0; border-left: 20px solid transparent; border-right: 20px solid transparent;
+    border-top: 40px solid #fff; filter: drop-shadow(0 3px 3px rgba(0,0,0,.6));
+  }
+  .pointer::after { content: ""; position: absolute; left: -12px; top: -36px; border-left: 12px solid transparent; border-right: 12px solid transparent; border-top: 25px solid #ff4f8b; }
+  .result {
+    margin-top: 10px; font-size: 34px; font-weight: 900; padding: 8px 28px; border-radius: 16px;
+    background: linear-gradient(90deg, #ff4f8b, #ff8a5c); border: 3px solid #fff;
+    box-shadow: 0 4px 14px rgba(0,0,0,.4); text-shadow: 0 2px 4px rgba(0,0,0,.5);
+    opacity: 0; transform: scale(.5); transition: opacity .3s, transform .4s cubic-bezier(.2,1.6,.4,1);
+    max-width: 90vw; text-align: center; word-break: break-all;
+  }
+  .result.show { opacity: 1; transform: scale(1); }
+  .preview-note { position: fixed; top: 4px; left: 6px; font-size: 11px; color: #aaa; }
+</style>
+</head>
+<body>
+<div id="stage" class="hidden">
+  <div class="tpl" id="tpl"></div>
+  <div class="wheel-wrap">
+    <canvas id="c"></canvas>
+    <div class="pointer"></div>
+  </div>
+  <div class="result" id="result"></div>
+</div>
+<script src="/overlay/common.js"></script>
+<script>
+  const preview = params.get('preview') === '1';
+  const soundOn = params.get('sound') !== '0' && !preview;
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let size = 0;
+  function setupCanvas() {
+    size = preview
+      ? Math.max(120, Math.floor(Math.min(window.innerWidth, window.innerHeight * 0.78) - 20))
+      : Math.max(120, Number(params.get('size')) || 520);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  setupCanvas();
+  window.addEventListener('resize', () => {
+    setupCanvas();
+    draw();
+  });
+  const stage = document.getElementById('stage');
+  const resultEl = document.getElementById('result');
+  const tplEl = document.getElementById('tpl');
+
+  const COLORS = ['#ff4f8b', '#ffb84d', '#6fd3ff', '#7ddf8b', '#c49bff', '#ff8a6f', '#ffe066', '#5ec8c0'];
+  let items = [];
+  let rot = 0; // ラジアン。0 のとき項目0の始まりが真上
+  let anim = null;
+  let currentSpinId = null;
+  let S = null;
+  let hideTimer = null;
+
+  // ------ 効果音（WebAudio で生成） ------
+  let audio = null;
+  function ac() {
+    if (!soundOn) return null;
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') audio.resume();
+    } catch (e) {
+      return null;
+    }
+    return audio;
+  }
+  function tick() {
+    const a = ac();
+    if (!a) return;
+    const o = a.createOscillator();
+    const g = a.createGain();
+    o.type = 'triangle';
+    o.frequency.value = 1400;
+    g.gain.setValueAtTime(0.12, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.05);
+    o.connect(g).connect(a.destination);
+    o.start();
+    o.stop(a.currentTime + 0.06);
+  }
+  function fanfare() {
+    const a = ac();
+    if (!a) return;
+    [523, 659, 784, 1047].forEach((f, i) => {
+      const o = a.createOscillator();
+      const g = a.createGain();
+      o.type = 'square';
+      o.frequency.value = f;
+      const t = a.currentTime + i * 0.12;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.08, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (i === 3 ? 0.6 : 0.15));
+      o.connect(g).connect(a.destination);
+      o.start(t);
+      o.stop(t + 0.7);
+    });
+  }
+
+  // ------ 描画 ------
+  function draw() {
+    const r = size / 2;
+    ctx.clearRect(0, 0, size, size);
+    const n = items.length;
+    if (!n) {
+      ctx.fillStyle = 'rgba(0,0,0,.5)';
+      ctx.beginPath();
+      ctx.arc(r, r, r - 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.round(size / 16)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('項目がありません', r, r);
+      return;
+    }
+    const seg = (Math.PI * 2) / n;
+    const fontSize = Math.max(11, Math.min(size / 14, (size / n) * 1.1));
+    for (let i = 0; i < n; i++) {
+      const a0 = -Math.PI / 2 + rot + i * seg;
+      ctx.beginPath();
+      ctx.moveTo(r, r);
+      ctx.arc(r, r, r - 6, a0, a0 + seg);
+      ctx.closePath();
+      let color = COLORS[i % COLORS.length];
+      if (n % COLORS.length === 1 && i === n - 1) color = COLORS[(i + 2) % COLORS.length]; // 隣同士の同色を避ける
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.9)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(r, r);
+      ctx.rotate(a0 + seg / 2);
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = 'rgba(0,0,0,.55)';
+      ctx.lineWidth = 3;
+      let label = String(items[i]);
+      const maxW = r * 0.72;
+      // 長い項目はまず文字を小さくし、それでも入らなければ省略
+      let fs = fontSize;
+      const setFont = () => (ctx.font = `bold ${fs}px "M PLUS Rounded 1c", "Yu Gothic UI", Meiryo, sans-serif`);
+      setFont();
+      while (ctx.measureText(label).width > maxW && fs > fontSize * 0.55) {
+        fs -= 1;
+        setFont();
+      }
+      while (ctx.measureText(label).width > maxW && label.length > 1) label = label.slice(0, -1);
+      if (label !== String(items[i])) label = label.slice(0, -1) + '…';
+      ctx.strokeText(label, r - 20, 0);
+      ctx.fillText(label, r - 20, 0);
+      ctx.restore();
+    }
+    // 外枠と中心
+    ctx.beginPath();
+    ctx.arc(r, r, r - 4, 0, Math.PI * 2);
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(r, r, size * 0.07, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(r, r, size * 0.045, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff4f8b';
+    ctx.fill();
+  }
+
+  function indexAtPointer() {
+    const n = items.length;
+    const seg = (Math.PI * 2) / n;
+    const a = (((-rot) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    return Math.floor(a / seg) % n;
+  }
+
+  function show() {
+    clearTimeout(hideTimer);
+    stage.classList.remove('hidden');
+  }
+  function hideLater(ms) {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (!alwaysShow()) stage.classList.add('hidden');
+      resultEl.classList.remove('show');
+    }, ms);
+  }
+  function alwaysShow() {
+    return preview || (S && S.roulette.options.alwaysShow);
+  }
+
+  function startSpin(sp) {
+    if (currentSpinId === sp.id) return;
+    currentSpinId = sp.id;
+    items = sp.items;
+    tplEl.textContent = sp.template;
+    resultEl.classList.remove('show');
+    show();
+    const n = items.length;
+    const seg = (Math.PI * 2) / n;
+    const elapsed = (Date.now() - sp.startedAt) / 1000;
+    const duration = Math.max(0.1, sp.duration - elapsed);
+    // 目標: 当選項目の範囲内（端を避けたランダム位置）が真上に来る回転量
+    const jitter = (Math.random() * 0.7 + 0.15) * seg;
+    const targetMod = (((-(sp.index * seg + jitter)) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const start = rot;
+    const startMod = ((start % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    let delta = targetMod - startMod;
+    if (delta < 0) delta += Math.PI * 2;
+    const turns = Math.max(2, Math.round(duration * 1.2));
+    const end = start + delta + turns * Math.PI * 2;
+    const t0 = performance.now();
+    let lastIdx = -1;
+    cancelAnimationFrame(anim);
+    const step = now => {
+      const t = Math.min(1, (now - t0) / (duration * 1000));
+      const e = 1 - Math.pow(1 - t, 4); // easeOutQuart
+      rot = start + (end - start) * e;
+      draw();
+      const idx = indexAtPointer();
+      if (idx !== lastIdx) {
+        if (lastIdx !== -1) tick();
+        lastIdx = idx;
+      }
+      if (t < 1) anim = requestAnimationFrame(step);
+      else finish(sp);
+    };
+    anim = requestAnimationFrame(step);
+  }
+
+  function finish(sp) {
+    resultEl.textContent = sp.result;
+    resultEl.classList.add('show');
+    fanfare();
+    const remain = sp.startedAt + (sp.duration + sp.hold) * 1000 - Date.now();
+    hideLater(Math.max(1500, remain));
+  }
+
+  function idleItems() {
+    const R = S.roulette;
+    return R.templates[R.active].items;
+  }
+
+  subscribe(
+    state => {
+      S = state;
+      const sp = S.roulette.spinning;
+      if (sp && sp.id !== currentSpinId) {
+        if (sp.done) {
+          // 読み込み時にすでに止まっていた場合
+          currentSpinId = sp.id;
+          items = sp.items;
+          const seg = (Math.PI * 2) / items.length;
+          rot = -(sp.index + 0.5) * seg;
+          tplEl.textContent = sp.template;
+          draw();
+          show();
+          finish(sp);
+        } else {
+          startSpin(sp);
+        }
+        return;
+      }
+      if (!sp && !anim_running()) {
+        // 待機中はテンプレの内容を表示
+        const list = idleItems();
+        if (JSON.stringify(list) !== JSON.stringify(items)) {
+          items = list;
+          draw();
+        }
+        tplEl.textContent = S.roulette.templates[S.roulette.active].name;
+        if (alwaysShow()) show();
+        else if (!resultEl.classList.contains('show')) stage.classList.add('hidden');
+      }
+    },
+    ev => {
+      if (ev.type === 'spin') startSpin(ev.spin);
+    }
+  );
+
+  function anim_running() {
+    return S && S.roulette.spinning && !S.roulette.spinning.done;
+  }
+
+  if (preview) {
+    stage.classList.remove('hidden');
+    document.body.insertAdjacentHTML('beforeend', '<div class="preview-note">プレビュー</div>');
+  }
+  draw();
+</script>
+</body>
+</html>

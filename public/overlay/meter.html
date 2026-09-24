@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>盛り上がりメーター</title>
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif; color: #fff; padding: 14px; }
+  .wrap { width: 560px; text-shadow: 0 2px 4px rgba(0,0,0,.7); }
+  .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .title { font-size: 24px; font-weight: 900; }
+  .nums { margin-left: auto; font-size: 18px; font-weight: bold; font-variant-numeric: tabular-nums; }
+  .queue { background: #ff4f8b; border-radius: 12px; padding: 0 10px; font-size: 15px; font-weight: bold; display: none; }
+  .queue.on { display: inline-block; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .5; } }
+  .bar {
+    position: relative; height: 34px; border-radius: 17px; overflow: hidden;
+    background: rgba(15,15,30,.72); border: 3px solid rgba(255,255,255,.85);
+    box-shadow: 0 3px 10px rgba(0,0,0,.4);
+  }
+  .fill {
+    position: absolute; inset: 0 auto 0 0; width: 0;
+    background: linear-gradient(90deg, #ffd166, #ff8a5c 50%, #ff4f8b);
+    transition: width .8s cubic-bezier(.2,.8,.3,1);
+  }
+  .fill::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.45) 45%, transparent 60%);
+    background-size: 200% 100%; animation: shine 2.4s linear infinite;
+  }
+  @keyframes shine { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+  .pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; }
+  .max {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 26px; font-weight: 900; letter-spacing: 4px; color: #fff;
+    background: linear-gradient(90deg, #ff4f8b, #ffd166, #6fd3ff, #ff4f8b); background-size: 300% 100%;
+    opacity: 0; pointer-events: none;
+  }
+  .full .max { animation: maxin 2.2s ease-out forwards, rainbow 1s linear infinite; }
+  @keyframes maxin { 0% { opacity: 0; transform: scale(1.4); } 15% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes rainbow { to { background-position: 300% 0; } }
+  .full .bar { animation: shake .5s 2; }
+  @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+  /* 縦メーター */
+  .vertical .wrap { width: auto; display: flex; flex-direction: column; align-items: center; }
+  .vertical .head { flex-direction: column; align-items: center; gap: 4px; }
+  .vertical .nums { margin-left: 0; }
+  .vertical .bar { width: 46px; height: 360px; border-radius: 23px; }
+  .vertical .fill { inset: auto 0 0 0; width: auto !important; height: 0; transition: height .8s cubic-bezier(.2,.8,.3,1); background: linear-gradient(0deg, #ffd166, #ff8a5c 50%, #ff4f8b); }
+  .vertical .pct { writing-mode: vertical-rl; }
+  .vertical .max { writing-mode: vertical-rl; font-size: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="head">
+    <span class="title" id="title"></span>
+    <span class="queue" id="queue"></span>
+    <span class="nums" id="nums"></span>
+  </div>
+  <div class="bar"><div class="fill" id="fill"></div><div class="pct" id="pct"></div><div class="max">MAX!!</div></div>
+</div>
+<script src="/overlay/common.js"></script>
+<script>
+  const vertical = params.get('vertical') === '1';
+  if (vertical) document.body.classList.add('vertical');
+  const showNums = params.get('numbers') !== '0';
+  const fill = document.getElementById('fill');
+  let fullUntil = 0;
+  let last = null;
+
+  function setFill(ratio) {
+    const v = Math.max(0, Math.min(1, ratio)) * 100 + '%';
+    if (vertical) fill.style.height = v;
+    else fill.style.width = v;
+  }
+
+  function draw() {
+    if (!last) return;
+    const m = last.meter;
+    document.getElementById('title').textContent = m.title;
+    document.getElementById('nums').textContent = showNums ? `${fmt(m.progress)} / ${fmt(m.threshold)}` : '';
+    document.getElementById('pct').textContent = showNums ? Math.floor((m.progress / m.threshold) * 100) + '%' : '';
+    const q = document.getElementById('queue');
+    q.textContent = `ルーレット待ち ${last.roulette.queue}`;
+    q.classList.toggle('on', last.roulette.queue > 0);
+    if (Date.now() < fullUntil) return; // 満タン演出中
+    setFill(m.progress / m.threshold);
+  }
+
+  subscribe(
+    S => {
+      last = S;
+      draw();
+    },
+    ev => {
+      if (ev.type !== 'meterFull') return;
+      fullUntil = Date.now() + 2400;
+      setFill(1);
+      const wrap = document.body;
+      wrap.classList.remove('full');
+      void wrap.offsetWidth;
+      wrap.classList.add('full');
+      setTimeout(() => {
+        wrap.classList.remove('full');
+        draw();
+      }, 2500);
+    }
+  );
+</script>
+</body>
+</html>
