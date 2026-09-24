@@ -168,7 +168,7 @@ section.tab.active { display: block; animation: fadein .3s; }
 
 /* URL */
 .url-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
-.url-row .name { width: 140px; color: var(--muted); font-weight: 700; }
+.url-row .name { width: 190px; color: var(--muted); font-weight: 700; }
 .url-row input { flex: 1; min-width: 200px; font-family: Consolas, monospace; }
 
 code { background: #fff0f6; border-radius: 6px; padding: 1px 5px; color: #d0588c; }

@@ -494,8 +494,10 @@ function setup() {
   // OBS URL
   const base = location.origin;
   const urls = [
-    ['カウンター', '/overlay/counter.html'],
-    ['メーター', '/overlay/meter.html'],
+    ['カウンター（縦）', '/overlay/counter.html'],
+    ['カウンター（横・正方形）', '/overlay/counter.html?layout=row'],
+    ['メーター（横）', '/overlay/meter.html'],
+    ['メーター（縦）', '/overlay/meter.html?vertical=1'],
     ['ルーレット', '/overlay/roulette.html'],
   ];
   $('#urls').innerHTML = urls

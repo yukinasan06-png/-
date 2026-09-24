@@ -833,6 +833,20 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 全角の「？＆＝」や空白が混ざったURL（日本語入力のまま打った場合など）は正しいURLに直して開き直す
+  let decoded = p;
+  try {
+    decoded = decodeURIComponent(p);
+  } catch (e) {}
+  const fixed = decoded.replace(/？/g, '?').replace(/＆/g, '&').replace(/＝/g, '=').replace(/[\s\u3000]+/g, '');
+  if (fixed !== decoded) {
+    const q = fixed.indexOf('?');
+    const pathPart = q >= 0 ? fixed.slice(0, q) : fixed;
+    const query = (q >= 0 ? fixed.slice(q + 1) : '') + (url.search ? '&' + url.search.slice(1) : '');
+    res.writeHead(302, { Location: encodeURI(pathPart) + (query ? '?' + query.replace(/^&/, '') : '') });
+    return res.end();
+  }
+
   // 静的ファイル
   let file = p === '/' ? '/index.html' : p;
   if (file.endsWith('/')) file += 'index.html';
@@ -843,8 +857,12 @@ const server = http.createServer(async (req, res) => {
   }
   fs.readFile(full, (err, data) => {
     if (err) {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      return res.end('Not found');
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(
+        `<meta charset="utf-8"><body style="font-family:sans-serif;padding:20px;color:#6b4a5c">` +
+          `<h3>ページが見つかりません（${String(decoded).replace(/[<>&"]/g, '')}）</h3>` +
+          `<p>URLを確認してください。使えるURLは <a href="/">操作パネル</a> の「OBS用URL」タブからコピーできます。</p></body>`
+      );
     }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(data);
