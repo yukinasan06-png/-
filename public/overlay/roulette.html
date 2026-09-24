@@ -3,29 +3,40 @@
 <head>
 <meta charset="utf-8">
 <title>ルーレット</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;800&display=swap">
 <style>
   html, body { margin: 0; background: transparent; overflow: hidden; }
-  body { font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif; color: #fff; }
-  #stage { display: flex; flex-direction: column; align-items: center; padding: 10px; transition: opacity .6s, transform .6s; }
-  #stage.hidden { opacity: 0; transform: scale(.85); }
-  .tpl { font-size: 22px; font-weight: 900; text-shadow: 0 2px 5px rgba(0,0,0,.8); margin-bottom: 4px; min-height: 30px; }
-  .wheel-wrap { position: relative; }
-  canvas { display: block; filter: drop-shadow(0 6px 12px rgba(0,0,0,.45)); }
-  .pointer {
-    position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
-    width: 0; height: 0; border-left: 20px solid transparent; border-right: 20px solid transparent;
-    border-top: 40px solid #fff; filter: drop-shadow(0 3px 3px rgba(0,0,0,.6));
+  body { font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif; color: #6b4a5c; }
+  #stage { display: flex; flex-direction: column; align-items: center; padding: 10px; transition: opacity .6s, transform .6s cubic-bezier(.3, 1.4, .5, 1); }
+  #stage.hidden { opacity: 0; transform: scale(.7) rotate(-6deg); }
+  .tpl {
+    font-size: 20px; font-weight: 800; color: #ff6fa8; margin-bottom: 26px; min-height: 30px;
+    background: #fff; border: 3px solid #ffb3d1; border-radius: 999px; padding: 2px 18px; box-shadow: 0 3px 0 #ffd6e7;
   }
-  .pointer::after { content: ""; position: absolute; left: -12px; top: -36px; border-left: 12px solid transparent; border-right: 12px solid transparent; border-top: 25px solid #ff4f8b; }
+  .tpl:empty { visibility: hidden; }
+  .tpl::before { content: "🎀 "; }
+  .wheel-wrap { position: relative; }
+  canvas { display: block; filter: drop-shadow(0 8px 10px rgba(200, 90, 140, .3)); }
+  .pointer {
+    position: absolute; left: 50%; top: -22px; transform: translateX(-50%); font-size: 46px; line-height: 1;
+    filter: drop-shadow(0 3px 2px rgba(0,0,0,.2));
+  }
+  .pointer::before { content: "💗"; display: block; }
+  .pointer::after {
+    content: ""; position: absolute; left: 50%; bottom: -12px; transform: translateX(-50%);
+    border-left: 10px solid transparent; border-right: 10px solid transparent; border-top: 16px solid #ff6fa8;
+  }
   .result {
-    margin-top: 10px; font-size: 34px; font-weight: 900; padding: 8px 28px; border-radius: 16px;
-    background: linear-gradient(90deg, #ff4f8b, #ff8a5c); border: 3px solid #fff;
-    box-shadow: 0 4px 14px rgba(0,0,0,.4); text-shadow: 0 2px 4px rgba(0,0,0,.5);
-    opacity: 0; transform: scale(.5); transition: opacity .3s, transform .4s cubic-bezier(.2,1.6,.4,1);
+    margin-top: 14px; font-size: 32px; font-weight: 800; padding: 8px 30px; border-radius: 999px; color: #fff;
+    background: linear-gradient(135deg, #ff9ac4, #c7a6ff); border: 4px solid #fff;
+    box-shadow: 0 5px 0 #f3b7d3, 0 8px 18px rgba(200, 90, 160, .35); text-shadow: 0 2px 0 rgba(160, 60, 120, .35);
+    opacity: 0; transform: scale(.4); transition: opacity .3s, transform .5s cubic-bezier(.2, 1.8, .4, 1);
     max-width: 90vw; text-align: center; word-break: break-all;
   }
+  .result::before { content: "🎉 "; }
+  .result::after { content: " 🎉"; }
   .result.show { opacity: 1; transform: scale(1); }
-  .preview-note { position: fixed; top: 4px; left: 6px; font-size: 11px; color: #aaa; }
+  .preview-note { position: fixed; top: 4px; left: 6px; font-size: 11px; color: #c9a3b8; }
 </style>
 </head>
 <body>
@@ -65,7 +76,7 @@
   const resultEl = document.getElementById('result');
   const tplEl = document.getElementById('tpl');
 
-  const COLORS = ['#ff4f8b', '#ffb84d', '#6fd3ff', '#7ddf8b', '#c49bff', '#ff8a6f', '#ffe066', '#5ec8c0'];
+  const COLORS = ['#ffb3d1', '#ffe08a', '#b5ecd9', '#bcdcff', '#d9c8ff', '#ffc9b8', '#fff1a8', '#c8f0c4'];
   let items = [];
   let rot = 0; // ラジアン。0 のとき項目0の始まりが真上
   let anim = null;
@@ -122,11 +133,11 @@
     ctx.clearRect(0, 0, size, size);
     const n = items.length;
     if (!n) {
-      ctx.fillStyle = 'rgba(0,0,0,.5)';
+      ctx.fillStyle = '#fff0f6';
       ctx.beginPath();
       ctx.arc(r, r, r - 4, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = '#e0659b';
       ctx.font = `bold ${Math.round(size / 16)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -154,9 +165,10 @@
       ctx.rotate(a0 + seg / 2);
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = 'rgba(0,0,0,.55)';
-      ctx.lineWidth = 3;
+      ctx.fillStyle = '#6b4a5c';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 5;
+      ctx.lineJoin = 'round';
       let label = String(items[i]);
       const maxW = r * 0.72;
       // 長い項目はまず文字を小さくし、それでも入らなければ省略
@@ -169,24 +181,36 @@
       }
       while (ctx.measureText(label).width > maxW && label.length > 1) label = label.slice(0, -1);
       if (label !== String(items[i])) label = label.slice(0, -1) + '…';
-      ctx.strokeText(label, r - 20, 0);
-      ctx.fillText(label, r - 20, 0);
+      ctx.strokeText(label, r - Math.max(8, size * 0.03) - 14, 0);
+      ctx.fillText(label, r - Math.max(8, size * 0.03) - 14, 0);
       ctx.restore();
     }
-    // 外枠と中心
+    // 外枠（ピンクのふち＋白いドット）と中心のハート
+    const rim = Math.max(8, size * 0.03);
     ctx.beginPath();
-    ctx.arc(r, r, r - 4, 0, Math.PI * 2);
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = '#fff';
+    ctx.arc(r, r, r - rim / 2 - 1, 0, Math.PI * 2);
+    ctx.lineWidth = rim;
+    ctx.strokeStyle = '#ff8fbd';
     ctx.stroke();
+    const dots = 24;
+    for (let i = 0; i < dots; i++) {
+      const a = (i / dots) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(r + Math.cos(a) * (r - rim / 2 - 1), r + Math.sin(a) * (r - rim / 2 - 1), rim * 0.28, 0, Math.PI * 2);
+      ctx.fillStyle = i % 2 ? '#fff' : '#fff3b0';
+      ctx.fill();
+    }
     ctx.beginPath();
-    ctx.arc(r, r, size * 0.07, 0, Math.PI * 2);
+    ctx.arc(r, r, size * 0.085, 0, Math.PI * 2);
     ctx.fillStyle = '#fff';
     ctx.fill();
-    ctx.beginPath();
-    ctx.arc(r, r, size * 0.045, 0, Math.PI * 2);
-    ctx.fillStyle = '#ff4f8b';
-    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#ffb3d1';
+    ctx.stroke();
+    ctx.font = `${Math.round(size * 0.09)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💖', r, r + size * 0.005);
   }
 
   function indexAtPointer() {

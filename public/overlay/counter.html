@@ -3,29 +3,36 @@
 <head>
 <meta charset="utf-8">
 <title>カウンター</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;800&display=swap">
 <style>
   html, body { margin: 0; background: transparent; overflow: hidden; }
-  body { font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif; color: #fff; padding: 10px; }
-  #list { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  body { font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif; color: #6b4a5c; padding: 12px; }
+  #list { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
   #list.row { flex-direction: row; flex-wrap: wrap; }
   .item {
-    display: flex; align-items: center; gap: 14px; min-width: 240px;
-    background: linear-gradient(90deg, rgba(20,20,35,.78), rgba(40,20,45,.62));
-    border: 2px solid rgba(255,255,255,.18); border-left: 6px solid #ff6fa3;
-    border-radius: 12px; padding: 6px 16px 6px 12px;
-    text-shadow: 0 2px 4px rgba(0,0,0,.6);
+    --c: #ff8fbd; --soft: #ffe6f0;
+    display: flex; align-items: center; gap: 10px; min-width: 250px;
+    background: rgba(255, 255, 255, .92); border: 3px solid var(--c);
+    border-radius: 999px; padding: 4px 20px 4px 4px;
+    box-shadow: 0 4px 0 var(--soft), 0 6px 14px rgba(0, 0, 0, .15);
   }
-  .item .name { font-size: 20px; font-weight: bold; flex: 1; white-space: nowrap; }
-  .item .val { font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; }
-  .item .sub { font-size: 14px; opacity: .85; margin-left: 4px; }
-  .item.pop .val { animation: pop .6s ease-out; }
-  @keyframes pop { 0% { transform: scale(1.5); color: #ffe066; } 100% { transform: scale(1); color: #fff; } }
-  .item:nth-child(6n+1) { border-left-color: #ff6fa3; }
-  .item:nth-child(6n+2) { border-left-color: #ffb84d; }
-  .item:nth-child(6n+3) { border-left-color: #6fd3ff; }
-  .item:nth-child(6n+4) { border-left-color: #7dff9b; }
-  .item:nth-child(6n+5) { border-left-color: #c49bff; }
-  .item:nth-child(6n+6) { border-left-color: #ff8a6f; }
+  .item .icon {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--soft);
+    display: flex; align-items: center; justify-content: center; font-size: 24px; flex: none;
+  }
+  .item .name { font-size: 19px; font-weight: 800; flex: 1; white-space: nowrap; }
+  .item .val { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--c); -webkit-text-stroke: 1px rgba(0,0,0,.05); }
+  .item .sub { font-size: 13px; color: #b08ba0; margin-left: 4px; }
+  .item.pop .val { animation: pop .6s cubic-bezier(.3, 1.6, .5, 1); display: inline-block; }
+  .item.pop .icon { animation: wiggle .6s; }
+  @keyframes pop { 0% { transform: scale(1.6); } 100% { transform: scale(1); } }
+  @keyframes wiggle { 25% { transform: rotate(-15deg) scale(1.15); } 75% { transform: rotate(15deg) scale(1.15); } }
+  .item:nth-child(6n+1) { --c: #ff7eb3; --soft: #ffe0ee; }
+  .item:nth-child(6n+2) { --c: #f5a623; --soft: #fff0d4; }
+  .item:nth-child(6n+3) { --c: #45c2a4; --soft: #daf5ee; }
+  .item:nth-child(6n+4) { --c: #5aa7f5; --soft: #dfeeff; }
+  .item:nth-child(6n+5) { --c: #a283ff; --soft: #ece5ff; }
+  .item:nth-child(6n+6) { --c: #ff8a75; --soft: #ffe7e2; }
 </style>
 </head>
 <body>
@@ -33,6 +40,7 @@
 <script src="/connector.js"></script>
 <script src="/overlay/common.js"></script>
 <script>
+  const ICONS = { likes: '💗', superchat: '💰', first: '🌱', comments: '💬', gift: '🎁', keyword: '✨' };
   const ids = (params.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean);
   const showAmount = params.get('amount') !== '0';
   const list = document.getElementById('list');
@@ -45,7 +53,7 @@
     const k = items.map(i => i.id).join(',');
     if (k !== keys) {
       keys = k;
-      list.innerHTML = items.map(i => `<div class="item" data-id="${i.id}"><span class="name"></span><span class="val"></span></div>`).join('');
+      list.innerHTML = items.map(i => `<div class="item" data-id="${i.id}"><span class="icon">${ICONS[i.id] || '⭐'}</span><span class="name"></span><span class="val"></span></div>`).join('');
     }
     for (const it of items) {
       const el = list.querySelector(`[data-id="${it.id}"]`);

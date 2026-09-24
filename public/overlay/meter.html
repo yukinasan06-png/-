@@ -3,51 +3,67 @@
 <head>
 <meta charset="utf-8">
 <title>盛り上がりメーター</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;800&display=swap">
 <style>
   html, body { margin: 0; background: transparent; overflow: hidden; }
-  body { font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif; color: #fff; padding: 14px; }
-  .wrap { width: 560px; text-shadow: 0 2px 4px rgba(0,0,0,.7); }
-  .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
-  .title { font-size: 24px; font-weight: 900; }
-  .nums { margin-left: auto; font-size: 18px; font-weight: bold; font-variant-numeric: tabular-nums; }
-  .queue { background: #ff4f8b; border-radius: 12px; padding: 0 10px; font-size: 15px; font-weight: bold; display: none; }
-  .queue.on { display: inline-block; animation: blink 1s infinite; }
-  @keyframes blink { 50% { opacity: .5; } }
+  body { font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif; color: #6b4a5c; padding: 16px 16px 16px 20px; }
+  .wrap { width: 560px; }
+  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .title {
+    font-size: 24px; font-weight: 800; color: #ff6fa8; padding: 2px 16px 2px 12px;
+    background: #fff; border: 3px solid #ffb3d1; border-radius: 999px; box-shadow: 0 3px 0 #ffd6e7;
+  }
+  .title::before { content: "💖 "; }
+  .nums {
+    margin-left: auto; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: #fff;
+    background: #c7a6ff; border-radius: 999px; padding: 2px 12px; box-shadow: 0 3px 0 #a98be8;
+  }
+  .nums:empty { display: none; }
+  .queue { background: #ffc35c; color: #fff; border-radius: 999px; padding: 2px 12px; font-size: 14px; font-weight: 800; display: none; box-shadow: 0 3px 0 #e8a63a; }
+  .queue.on { display: inline-block; animation: bounce 1s infinite; }
+  @keyframes bounce { 50% { transform: translateY(-4px); } }
   .bar {
-    position: relative; height: 34px; border-radius: 17px; overflow: hidden;
-    background: rgba(15,15,30,.72); border: 3px solid rgba(255,255,255,.85);
-    box-shadow: 0 3px 10px rgba(0,0,0,.4);
+    position: relative; height: 40px; border-radius: 999px; overflow: visible;
+    background: #fff; border: 4px solid #ffb3d1; box-shadow: 0 4px 0 #ffd6e7, 0 8px 16px rgba(0,0,0,.12);
   }
+  .track { position: absolute; inset: 4px; border-radius: 999px; overflow: hidden; background: #fff0f6; }
   .fill {
-    position: absolute; inset: 0 auto 0 0; width: 0;
-    background: linear-gradient(90deg, #ffd166, #ff8a5c 50%, #ff4f8b);
-    transition: width .8s cubic-bezier(.2,.8,.3,1);
+    position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 999px;
+    background: repeating-linear-gradient(-45deg, #ff8fbd 0 14px, #ffadd0 14px 28px);
+    background-size: 40px 40px; animation: stripe 1.2s linear infinite;
+    transition: width .9s cubic-bezier(.3, 1.3, .5, 1);
   }
+  @keyframes stripe { to { background-position: 40px 0; } }
   .fill::after {
-    content: ""; position: absolute; inset: 0;
-    background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.45) 45%, transparent 60%);
-    background-size: 200% 100%; animation: shine 2.4s linear infinite;
+    content: ""; position: absolute; left: 8px; right: 8px; top: 4px; height: 6px; border-radius: 999px; background: rgba(255,255,255,.55);
   }
-  @keyframes shine { from { background-position: 150% 0; } to { background-position: -50% 0; } }
-  .pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; }
+  .heart {
+    position: absolute; right: -18px; top: 50%; transform: translateY(-50%); font-size: 40px;
+    filter: drop-shadow(0 3px 2px rgba(0,0,0,.15)); animation: beat 1.2s infinite;
+  }
+  @keyframes beat { 0%, 60%, 100% { transform: translateY(-50%) scale(1); } 30% { transform: translateY(-50%) scale(1.18); } }
+  .pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; color: #fff; text-shadow: 0 0 3px #e0659b, 0 0 3px #e0659b, 0 0 3px #e0659b; }
   .max {
-    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    font-size: 26px; font-weight: 900; letter-spacing: 4px; color: #fff;
-    background: linear-gradient(90deg, #ff4f8b, #ffd166, #6fd3ff, #ff4f8b); background-size: 300% 100%;
+    position: absolute; inset: 4px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    font-size: 24px; font-weight: 800; letter-spacing: 4px; color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.12);
+    background: linear-gradient(90deg, #ff9ac4, #ffd36e, #7fdcc0, #9ec5ff, #c7a6ff, #ff9ac4); background-size: 300% 100%;
     opacity: 0; pointer-events: none;
   }
   .full .max { animation: maxin 2.2s ease-out forwards, rainbow 1s linear infinite; }
-  @keyframes maxin { 0% { opacity: 0; transform: scale(1.4); } 15% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes maxin { 0% { opacity: 0; transform: scale(1.3); } 15% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
   @keyframes rainbow { to { background-position: 300% 0; } }
-  .full .bar { animation: shake .5s 2; }
-  @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+  .full .bar { animation: jump .45s 3; }
+  @keyframes jump { 50% { transform: translateY(-6px) scale(1.02); } }
+  .sparkle { position: absolute; font-size: 22px; pointer-events: none; animation: fly 1.4s ease-out forwards; }
+  @keyframes fly { from { opacity: 1; transform: translate(0, 0) scale(.6); } to { opacity: 0; transform: translate(var(--x), var(--y)) scale(1.3) rotate(40deg); } }
 
   /* 縦メーター */
   .vertical .wrap { width: auto; display: flex; flex-direction: column; align-items: center; }
-  .vertical .head { flex-direction: column; align-items: center; gap: 4px; }
+  .vertical .head { flex-direction: column; gap: 6px; }
   .vertical .nums { margin-left: 0; }
-  .vertical .bar { width: 46px; height: 360px; border-radius: 23px; }
-  .vertical .fill { inset: auto 0 0 0; width: auto !important; height: 0; transition: height .8s cubic-bezier(.2,.8,.3,1); background: linear-gradient(0deg, #ffd166, #ff8a5c 50%, #ff4f8b); }
+  .vertical .bar { width: 52px; height: 360px; }
+  .vertical .fill { inset: auto 0 0 0; width: auto !important; height: 0; transition: height .9s cubic-bezier(.3, 1.3, .5, 1); }
+  .vertical .heart { right: 50%; top: -24px; transform: translateX(50%); animation: none; }
   .vertical .pct { writing-mode: vertical-rl; }
   .vertical .max { writing-mode: vertical-rl; font-size: 20px; }
 </style>
@@ -59,7 +75,7 @@
     <span class="queue" id="queue"></span>
     <span class="nums" id="nums"></span>
   </div>
-  <div class="bar"><div class="fill" id="fill"></div><div class="pct" id="pct"></div><div class="max">MAX!!</div></div>
+  <div class="bar" id="bar"><div class="track"><div class="fill" id="fill"></div></div><div class="pct" id="pct"></div><div class="max">MAX!! 🎉</div><div class="heart">💖</div></div>
 </div>
 <script src="/connector.js"></script>
 <script src="/overlay/common.js"></script>
@@ -103,6 +119,20 @@
       wrap.classList.remove('full');
       void wrap.offsetWidth;
       wrap.classList.add('full');
+      // キラキラ
+      const bar = document.getElementById('bar');
+      const marks = ['✨', '💖', '⭐', '🎀', '💕'];
+      for (let i = 0; i < 14; i++) {
+        const sp = document.createElement('span');
+        sp.className = 'sparkle';
+        sp.textContent = marks[i % marks.length];
+        sp.style.left = Math.random() * 100 + '%';
+        sp.style.top = '10px';
+        sp.style.setProperty('--x', (Math.random() * 80 - 40) + 'px');
+        sp.style.setProperty('--y', (-40 - Math.random() * 60) + 'px');
+        bar.appendChild(sp);
+        setTimeout(() => sp.remove(), 1500);
+      }
       setTimeout(() => {
         wrap.classList.remove('full');
         draw();

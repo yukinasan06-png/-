@@ -131,6 +131,8 @@ function renderCounters() {
   $('#add-custom').disabled = !canAdd;
 }
 
+const ICONS = { likes: '💗', superchat: '💰', first: '🌱', comments: '💬', gift: '🎁', keyword: '✨' };
+
 function buildCounter(it) {
   const el = document.createElement('div');
   el.className = 'counter';
@@ -140,8 +142,9 @@ function buildCounter(it) {
   const num = isCustom ? Number(it.id.replace('custom', '')) : 0;
   el.innerHTML = `
     <div class="top">
-      <span class="tag ${isCustom ? 'custom' : ''}">${isCustom ? 'カスタム' + num : '自動'}</span>
+      <span class="icon">${ICONS[it.id] || '⭐'}</span>
       <input class="name" type="text" maxlength="40">
+      <span class="tag">${isCustom ? 'カスタム' + num : '自動'}</span>
     </div>
     <div class="value-row">
       <button class="minus" title="−1">−</button>
