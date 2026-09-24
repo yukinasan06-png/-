@@ -3,19 +3,29 @@
 YouTube 配信向けのカウンター／盛り上がりメーター／ルーレットツールです。
 Node.js だけで動きます（追加インストール不要）。
 
+## 設置
+
+1. ダウンロードした zip を右クリック →「プロパティ」→ 下の「許可する」にチェック →「OK」
+   （これをしないと Windows に start.bat をブロックされることがあります）
+2. zip を展開し、中の `配信カウンター` フォルダを今のツールのフォルダ（例：`わんコメ自作カウンター`）の中に置く
+   - 今のツール（ポート 8787）とは別フォルダ・別ポート（8790）なので、同時に起動できます
+
 ## 起動
 
-1. `start.bat` をダブルクリック
-2. ブラウザで操作パネル（http://localhost:8787/ ）が開きます
+1. `配信カウンター` フォルダの `start.bat` をダブルクリック
+2. ブラウザで操作パネル（http://localhost:8790/ ）が開きます
 3. OBS に「ブラウザ」ソースを追加し、操作パネルの「OBS用URL」タブのURLを貼り付けます
 
 | オーバーレイ | URL |
 |---|---|
-| カウンター | http://localhost:8787/overlay/counter.html |
-| 盛り上がりメーター | http://localhost:8787/overlay/meter.html |
-| ルーレット | http://localhost:8787/overlay/roulette.html |
+| カウンター | http://localhost:8790/overlay/counter.html |
+| 盛り上がりメーター | http://localhost:8790/overlay/meter.html |
+| ルーレット | http://localhost:8790/overlay/roulette.html |
 
 設定・カウント・テンプレは `data.json` に自動保存されます。
+
+**わんコメ・YouTube の自動カウントは、操作パネルか OBS の画面（カウンター／メーター／ルーレット）のどれかが開いている間に行われます。**
+（サーバーは外部に接続せず、ブラウザ側がわんコメ・YouTube から受け取ってサーバーへ送る仕組みです。複数開いていても二重にはカウントされません）
 
 ## 1. カウンター
 
@@ -71,7 +81,7 @@ Node.js だけで動きます（追加インストール不要）。
 ```
 
 - 同じ項目を複数行入れるとその項目が当たりやすくなります
-- `http://localhost:8787/api/spin` を開くとルーレットが回ります（Stream Deck などから利用可）
+- `http://localhost:8790/api/spin` を開くとルーレットが回ります（Stream Deck などから利用可）
 
 ## 動作テスト
 

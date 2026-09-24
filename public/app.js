@@ -31,16 +31,14 @@ function toast(msg) {
 }
 
 function connect() {
-  const es = new EventSource('/events');
-  es.onmessage = e => {
-    const msg = JSON.parse(e.data);
-    if (msg.t === 'state') {
-      S = msg.state;
+  Hub.start(
+    'panel',
+    state => {
+      S = state;
       render();
-    } else if (msg.t === 'event') {
-      onEvent(msg.event);
-    }
-  };
+    },
+    onEvent
+  );
 }
 
 function onEvent(ev) {

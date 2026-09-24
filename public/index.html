@@ -145,7 +145,7 @@
   <section class="tab" id="tab-connect">
     <div class="card">
       <h2>わんコメ連携</h2>
-      <p class="hint">コメント数・初見コメント・スパチャ・特定の言葉・カスタム項目の反応ワードは、わんコメから取得します。わんコメを起動しておけば自動で接続します（初期ポート 11180）。</p>
+      <p class="hint">コメント数・初見コメント・スパチャ・特定の言葉・カスタム項目の反応ワードは、わんコメから取得します。わんコメを起動しておけば自動で接続します（初期ポート 11180）。<br>※ わんコメ・YouTube への接続はブラウザ側で行います。<b>この操作パネル、または OBS のカウンター／メーター／ルーレット画面のどれかが開いている間</b>だけ自動カウントされます。</p>
       <div class="form-grid" id="oc-form">
         <label>わんコメ連携</label><label style="color:inherit"><input data-key="enabled" type="checkbox"> 有効</label>
         <label>ホスト</label><input data-key="host" type="text">
@@ -234,6 +234,7 @@
 </main>
 
 <div class="toast" id="toast"></div>
+<script src="/connector.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

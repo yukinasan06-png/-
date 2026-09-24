@@ -1,15 +1,14 @@
 'use strict';
 // 配信用カウンター & 盛り上がりメーター & ルーレット
 // 依存パッケージなし（Node.js 標準モジュールのみ）で動作します。
+// このサーバーは外部へは接続しません。わんコメ・YouTube の取得はブラウザ側（public/connector.js）が行います。
 
 const http = require('http');
-const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const net = require('net');
 const crypto = require('crypto');
 
-const PORT = Number(process.env.PORT) || 8787;
+const PORT = Number(process.env.PORT) || 8790; // 既存ツール(8787)と同時に使えるように別ポート
 const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_FILE = path.join(__dirname, 'data.json');
@@ -146,13 +145,18 @@ function totalPoints() {
 }
 
 // ---------------------------------------------------------------------------
-// 配信 (SSE)
+// ハブ（自作 WebSocket サーバー）
+//  - 操作パネル / OBS 画面がここにつながる
+//  - わんコメ・YouTube への接続はブラウザ側（connector.js）が行い、結果をここへ送る
+//    （このサーバー自身は外部へ一切接続しません）
 // ---------------------------------------------------------------------------
 
-const clients = new Set();
+const clients = new Set(); // { socket, role, id }
+let clientSeq = 0;
+let leader = null; // わんコメ・YouTube の取得を担当する画面
 const status = {
-  onecomme: { state: 'off', message: '未接続' },
-  youtube: { state: 'off', message: '未設定' },
+  onecomme: { state: 'off', message: '取得担当の画面がありません' },
+  youtube: { state: 'off', message: '取得担当の画面がありません' },
 };
 
 function publicState() {
@@ -182,8 +186,44 @@ function publicState() {
   };
 }
 
-function send(res, obj) {
-  res.write('data: ' + JSON.stringify(obj) + '\n\n');
+function wsAccept(key) {
+  return crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+}
+
+function encodeFrame(str) {
+  const payload = Buffer.from(str, 'utf8');
+  const len = payload.length;
+  let header;
+  if (len < 126) {
+    header = Buffer.from([0x81, len]);
+  } else if (len < 65536) {
+    header = Buffer.alloc(4);
+    header[0] = 0x81;
+    header[1] = 126;
+    header.writeUInt16BE(len, 2);
+  } else {
+    header = Buffer.alloc(10);
+    header[0] = 0x81;
+    header[1] = 127;
+    header.writeUInt32BE(0, 2);
+    header.writeUInt32BE(len, 6);
+  }
+  return Buffer.concat([header, payload]);
+}
+
+function sendTo(client, obj) {
+  try {
+    client.socket.write(encodeFrame(JSON.stringify(obj)));
+  } catch (e) {}
+}
+
+function broadcast(obj) {
+  const frame = encodeFrame(JSON.stringify(obj));
+  for (const c of clients) {
+    try {
+      c.socket.write(frame);
+    } catch (e) {}
+  }
 }
 
 let broadcastTimer = null;
@@ -193,13 +233,126 @@ function changed() {
   if (broadcastTimer) return;
   broadcastTimer = setTimeout(() => {
     broadcastTimer = null;
-    const s = { t: 'state', state: publicState() };
-    for (const c of clients) send(c, s);
+    broadcast({ t: 'state', state: publicState() });
   }, 50);
 }
 
 function emit(event) {
-  for (const c of clients) send(c, { t: 'event', event });
+  broadcast({ t: 'event', event });
+}
+
+// 取得担当（リーダー）を選ぶ：操作パネル優先、なければ OBS 画面
+function electLeader() {
+  const list = [...clients].filter(c => c.role === 'panel' || c.role === 'overlay');
+  const next = list.find(c => c.role === 'panel') || list[0] || null;
+  if (next === leader && (!leader || clients.has(leader))) return;
+  leader = next;
+  status.onecomme = { state: 'off', message: leader ? '接続準備中…' : '取得担当の画面がありません' };
+  status.youtube = { state: 'off', message: leader ? '接続準備中…' : '取得担当の画面がありません' };
+  for (const c of clients) sendTo(c, { t: 'role', leader: c === leader });
+  changed();
+}
+
+function handleUpgrade(req, socket) {
+  const key = req.headers['sec-websocket-key'];
+  if (!key) return socket.destroy();
+  socket.write(
+    'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+      'Sec-WebSocket-Accept: ' + wsAccept(key) + '\r\n\r\n'
+  );
+  socket.setNoDelay(true);
+  const client = { socket, role: 'unknown', id: ++clientSeq };
+  clients.add(client);
+  const bye = () => {
+    if (!clients.delete(client)) return;
+    if (client === leader) electLeader();
+  };
+  socket.on('close', bye);
+  socket.on('error', bye);
+
+  let buffer = Buffer.alloc(0);
+  let frags = [];
+  socket.on('data', data => {
+    buffer = buffer.length ? Buffer.concat([buffer, data]) : data;
+    while (buffer.length >= 2) {
+      const fin = (buffer[0] & 0x80) !== 0;
+      const opcode = buffer[0] & 0x0f;
+      const masked = (buffer[1] & 0x80) !== 0;
+      let len = buffer[1] & 0x7f;
+      let offset = 2;
+      if (len === 126) {
+        if (buffer.length < 4) return;
+        len = buffer.readUInt16BE(2);
+        offset = 4;
+      } else if (len === 127) {
+        if (buffer.length < 10) return;
+        len = Number(buffer.readBigUInt64BE(2));
+        offset = 10;
+      }
+      const dataStart = masked ? offset + 4 : offset;
+      if (buffer.length < dataStart + len) return; // まだ全部届いていない
+      const payload = Buffer.from(buffer.subarray(dataStart, dataStart + len));
+      if (masked) {
+        const mask = buffer.subarray(offset, offset + 4);
+        for (let i = 0; i < len; i++) payload[i] ^= mask[i % 4];
+      }
+      buffer = buffer.subarray(dataStart + len);
+
+      if (opcode === 0x8) {
+        socket.end();
+        return bye();
+      }
+      if (opcode === 0x9) {
+        socket.write(Buffer.from([0x8a, 0]));
+        continue;
+      }
+      if (opcode === 0x1 || opcode === 0x0) {
+        if (opcode === 0x1) frags = [];
+        frags.push(payload);
+        if (!fin) continue;
+        const text = Buffer.concat(frags).toString('utf8');
+        frags = [];
+        try {
+          onMessage(client, JSON.parse(text));
+        } catch (e) {
+          console.error('[ws] メッセージ処理エラー:', e.message);
+        }
+      }
+    }
+  });
+}
+
+function onMessage(client, msg) {
+  switch (msg.cmd) {
+    case 'hello':
+      client.role = msg.role === 'panel' ? 'panel' : 'overlay';
+      sendTo(client, { t: 'state', state: publicState() });
+      if (!leader || (client.role === 'panel' && leader.role !== 'panel')) {
+        if (leader) sendTo(leader, { t: 'role', leader: false });
+        leader = null;
+        electLeader();
+      } else {
+        sendTo(client, { t: 'role', leader: client === leader });
+      }
+      break;
+
+    // 以下は取得担当の画面からのみ受け付ける
+    case 'onecomme':
+      if (client === leader) handleOneCommeMessage(msg.msg || {});
+      break;
+    case 'likes':
+      if (client === leader) updateLikes(Number(msg.count) || 0, msg.source, msg.videoId);
+      break;
+    case 'gifts':
+      if (client === leader) handleYoutubeGifts(msg.gifts);
+      break;
+    case 'status':
+      if (client === leader && (msg.key === 'onecomme' || msg.key === 'youtube')) {
+        status[msg.key] = { state: String(msg.state || 'off'), message: String(msg.message || '') };
+        changed();
+      }
+      break;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -383,13 +536,8 @@ function findLikeCount(obj, depth = 0) {
   return null;
 }
 
-function handleOneCommeMessage(raw) {
-  let msg;
-  try {
-    msg = JSON.parse(raw);
-  } catch (e) {
-    return;
-  }
+// わんコメの WebSocket メッセージ（ブラウザ側から中継されてくる）
+function handleOneCommeMessage(msg) {
   const type = msg.type;
   const data = msg.data || {};
   if (type === 'connected') {
@@ -408,206 +556,20 @@ function handleOneCommeMessage(raw) {
 }
 
 // ---------------------------------------------------------------------------
-// 最小限の WebSocket クライアント（わんコメ接続用）
+// YouTube（高評価・メンギフ）: ブラウザ側で取得した結果を受け取る
 // ---------------------------------------------------------------------------
 
-function wsConnect(host, port, pathname, handlers) {
-  const key = crypto.randomBytes(16).toString('base64');
-  const sock = net.connect(port, host);
-  let buf = Buffer.alloc(0);
-  let open = false;
-  let frags = [];
-  let fragOp = 0;
-  let closed = false;
+// この時刻より前のメンギフは数えない（再起動・画面の切り替え時の二重カウント防止）
+let giftSince = Date.now();
+const seenGifts = new Set();
 
-  function close(err) {
-    if (closed) return;
-    closed = true;
-    sock.destroy();
-    handlers.close(err);
-  }
-
-  function sendFrame(op, payload) {
-    const mask = crypto.randomBytes(4);
-    const len = payload.length;
-    let header;
-    if (len < 126) {
-      header = Buffer.from([0x80 | op, 0x80 | len]);
-    } else if (len < 65536) {
-      header = Buffer.alloc(4);
-      header[0] = 0x80 | op;
-      header[1] = 0x80 | 126;
-      header.writeUInt16BE(len, 2);
-    } else {
-      header = Buffer.alloc(10);
-      header[0] = 0x80 | op;
-      header[1] = 0x80 | 127;
-      header.writeBigUInt64BE(BigInt(len), 2);
-    }
-    const masked = Buffer.alloc(len);
-    for (let i = 0; i < len; i++) masked[i] = payload[i] ^ mask[i % 4];
-    sock.write(Buffer.concat([header, mask, masked]));
-  }
-
-  sock.setNoDelay(true);
-  sock.on('connect', () => {
-    sock.write(
-      `GET ${pathname} HTTP/1.1\r\nHost: ${host}:${port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
-        `Sec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`
-    );
-  });
-  sock.on('data', chunk => {
-    buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
-    if (!open) {
-      const idx = buf.indexOf('\r\n\r\n');
-      if (idx < 0) return;
-      const head = buf.subarray(0, idx).toString();
-      if (!/^HTTP\/1\.[01] 101/.test(head)) return close(new Error('WebSocket ハンドシェイク失敗'));
-      open = true;
-      buf = buf.subarray(idx + 4);
-      handlers.open();
-    }
-    while (buf.length >= 2) {
-      const fin = (buf[0] & 0x80) !== 0;
-      const op = buf[0] & 0x0f;
-      const masked = (buf[1] & 0x80) !== 0;
-      let len = buf[1] & 0x7f;
-      let off = 2;
-      if (len === 126) {
-        if (buf.length < 4) return;
-        len = buf.readUInt16BE(2);
-        off = 4;
-      } else if (len === 127) {
-        if (buf.length < 10) return;
-        len = Number(buf.readBigUInt64BE(2));
-        off = 10;
-      }
-      let mask = null;
-      if (masked) {
-        if (buf.length < off + 4) return;
-        mask = buf.subarray(off, off + 4);
-        off += 4;
-      }
-      if (buf.length < off + len) return;
-      const payload = Buffer.from(buf.subarray(off, off + len));
-      buf = buf.subarray(off + len);
-      if (mask) for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i % 4];
-
-      if (op === 0x8) return close();
-      if (op === 0x9) {
-        sendFrame(0xa, payload);
-        continue;
-      }
-      if (op === 0xa) continue;
-      if (op === 0x1 || op === 0x2) {
-        fragOp = op;
-        frags = [payload];
-      } else if (op === 0x0) {
-        frags.push(payload);
-      }
-      if (fin && frags.length) {
-        const message = Buffer.concat(frags);
-        frags = [];
-        if (fragOp === 0x1) {
-          try {
-            handlers.message(message.toString('utf8'));
-          } catch (e) {
-            console.error('メッセージ処理エラー:', e);
-          }
-        }
-      }
-    }
-  });
-  sock.on('error', err => close(err));
-  sock.on('close', () => close());
-  return { close: () => close() };
-}
-
-let ocConn = null;
-let ocRetryTimer = null;
-let ocGen = 0;
-
-function oneCommeRestart() {
-  ocGen++;
-  if (ocConn) ocConn.close();
-  ocConn = null;
-  clearTimeout(ocRetryTimer);
-  const cfg = state.settings.onecomme;
-  if (!cfg.enabled) {
-    status.onecomme = { state: 'off', message: '無効' };
-    changed();
-    return;
-  }
-  const gen = ocGen;
-  status.onecomme = { state: 'connecting', message: `${cfg.host}:${cfg.port} に接続中…` };
-  changed();
-  ocConn = wsConnect(cfg.host, Number(cfg.port) || 11180, '/sub', {
-    open() {
-      if (gen !== ocGen) return;
-      status.onecomme = { state: 'ok', message: '接続中' };
-      console.log('[わんコメ] 接続しました');
-      changed();
-    },
-    message(raw) {
-      if (gen !== ocGen) return;
-      handleOneCommeMessage(raw);
-    },
-    close(err) {
-      if (gen !== ocGen) return;
-      ocConn = null;
-      status.onecomme = {
-        state: 'error',
-        message: (err ? err.code || err.message : '切断されました') + '（5秒後に再接続）',
-      };
-      changed();
-      ocRetryTimer = setTimeout(() => gen === ocGen && oneCommeRestart(), 5000);
-    },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// YouTube Data API（高評価・メンギフ）
-// ---------------------------------------------------------------------------
-
-function getJson(url) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { Accept: 'application/json' } }, res => {
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', c => (body += c));
-      res.on('end', () => {
-        let json;
-        try {
-          json = JSON.parse(body);
-        } catch (e) {
-          return reject(new Error('HTTP ' + res.statusCode));
-        }
-        if (res.statusCode >= 400) {
-          const err = new Error((json.error && json.error.message) || 'HTTP ' + res.statusCode);
-          err.reason = json.error && json.error.errors && json.error.errors[0] && json.error.errors[0].reason;
-          return reject(err);
-        }
-        resolve(json);
-      });
-    });
-    req.setTimeout(15000, () => req.destroy(new Error('タイムアウト')));
-    req.on('error', reject);
-  });
-}
-
-function parseVideoId(input) {
-  const s = String(input || '').trim();
-  if (!s) return '';
-  if (/^[\w-]{11}$/.test(s)) return s;
-  const m =
-    s.match(/[?&]v=([\w-]{11})/) ||
-    s.match(/youtu\.be\/([\w-]{11})/) ||
-    s.match(/\/(?:live|shorts|embed)\/([\w-]{11})/);
-  return m ? m[1] : '';
-}
-
-function updateLikes(raw, source) {
+function updateLikes(raw, source, videoId) {
   const L = state.likes;
+  if (videoId && L.videoId !== videoId) {
+    // 別の配信に切り替えたら高評価の基準をリセット
+    L.videoId = videoId;
+    L.base = 0;
+  }
   L.raw = raw;
   L.source = source;
   const it = getItem('likes');
@@ -615,145 +577,23 @@ function updateLikes(raw, source) {
   changed();
 }
 
-const yt = { gen: 0, videoTimer: null, chatTimer: null, liveChatId: null, chatPrimed: false, pageToken: null, seen: new Set() };
-
-function ytStatus(stateName, message) {
-  status.youtube = { state: stateName, message };
-  changed();
-}
-
-function ytNeeded() {
-  const src = state.settings.sources;
-  return src.likes === 'youtube' || src.gift === 'youtube';
-}
-
-async function youtubeRestart() {
-  yt.gen++;
-  const gen = yt.gen;
-  clearTimeout(yt.videoTimer);
-  clearTimeout(yt.chatTimer);
-  yt.liveChatId = null;
-  yt.chatPrimed = false;
-  yt.pageToken = null;
-  const cfg = state.settings.youtube;
-  if (!ytNeeded()) return ytStatus('off', '未使用（取得元がYouTube以外）');
-  if (!cfg.apiKey) return ytStatus('off', 'APIキー未設定');
-
-  let videoId = parseVideoId(cfg.video);
-  if (!videoId && cfg.channelId) {
-    ytStatus('connecting', 'チャンネルの配信を検索中…');
-    try {
-      const r = await getJson(
-        `https://www.googleapis.com/youtube/v3/search?part=id&type=video&eventType=live&channelId=${encodeURIComponent(
-          cfg.channelId
-        )}&key=${encodeURIComponent(cfg.apiKey)}`
-      );
-      if (gen !== yt.gen) return;
-      videoId = r.items && r.items[0] && r.items[0].id && r.items[0].id.videoId;
-      if (!videoId) {
-        ytStatus('error', '配信中のライブが見つかりません（60秒後に再検索）');
-        yt.videoTimer = setTimeout(() => gen === yt.gen && youtubeRestart(), 60000);
-        return;
-      }
-    } catch (e) {
-      if (gen !== yt.gen) return;
-      ytStatus('error', '検索エラー: ' + e.message);
-      yt.videoTimer = setTimeout(() => gen === yt.gen && youtubeRestart(), 60000);
-      return;
-    }
+function handleYoutubeGifts(gifts) {
+  if (!Array.isArray(gifts) || state.settings.sources.gift !== 'youtube') return;
+  let added = false;
+  for (const g of gifts) {
+    if (!g || !g.id || seenGifts.has(g.id)) continue;
+    seenGifts.add(g.id);
+    const t = Date.parse(g.time);
+    if (Number.isFinite(t) && t < giftSince) continue;
+    addValue('gift', Math.max(1, Math.trunc(Number(g.count) || 1)));
+    added = true;
   }
-  if (!videoId) return ytStatus('off', '配信URL（または動画ID / チャンネルID）未設定');
-
-  if (state.likes.videoId !== videoId) {
-    // 別の配信に切り替えたら高評価の基準をリセット
-    state.likes.videoId = videoId;
-    state.likes.base = 0;
-    state.likes.raw = null;
+  if (seenGifts.size > 20000) {
+    const keep = [...seenGifts].slice(-5000);
+    seenGifts.clear();
+    keep.forEach(id => seenGifts.add(id));
   }
-  ytStatus('connecting', `動画 ${videoId} に接続中…`);
-  pollVideo(gen, videoId);
-}
-
-async function pollVideo(gen, videoId) {
-  const cfg = state.settings.youtube;
-  try {
-    const r = await getJson(
-      `https://www.googleapis.com/youtube/v3/videos?part=statistics,liveStreamingDetails&id=${videoId}&key=${encodeURIComponent(cfg.apiKey)}`
-    );
-    if (gen !== yt.gen) return;
-    const v = r.items && r.items[0];
-    if (!v) throw new Error('動画が見つかりません');
-    if (state.settings.sources.likes === 'youtube' && v.statistics && v.statistics.likeCount !== undefined) {
-      updateLikes(Number(v.statistics.likeCount) || 0, 'youtube');
-    }
-    const chatId = v.liveStreamingDetails && v.liveStreamingDetails.activeLiveChatId;
-    const msgs = [`動画 ${videoId}`];
-    if (state.settings.sources.likes === 'youtube') msgs.push(`高評価 ${state.likes.raw ?? '-'}`);
-    if (state.settings.sources.gift === 'youtube') {
-      if (chatId) {
-        msgs.push('チャット取得中');
-        if (chatId !== yt.liveChatId) {
-          yt.liveChatId = chatId;
-          yt.chatPrimed = false;
-          yt.pageToken = null;
-          clearTimeout(yt.chatTimer);
-          pollChat(gen);
-        }
-      } else {
-        msgs.push('ライブチャットなし（配信前/終了？）');
-      }
-    }
-    if (status.youtube.state !== 'error' || !yt.chatError) ytStatus('ok', msgs.join(' / '));
-  } catch (e) {
-    if (gen !== yt.gen) return;
-    ytStatus('error', 'YouTube API エラー: ' + e.message);
-    if (e.reason === 'quotaExceeded') {
-      yt.videoTimer = setTimeout(() => pollVideo(gen, videoId), 10 * 60 * 1000);
-      return;
-    }
-  }
-  const interval = Math.max(10, num(cfg.likeInterval, 30)) * 1000;
-  yt.videoTimer = setTimeout(() => pollVideo(gen, videoId), interval);
-}
-
-async function pollChat(gen) {
-  const cfg = state.settings.youtube;
-  let wait = Math.max(5, num(cfg.chatInterval, 15)) * 1000;
-  try {
-    let url =
-      `https://www.googleapis.com/youtube/v3/liveChat/messages?part=snippet&maxResults=2000&liveChatId=${encodeURIComponent(
-        yt.liveChatId
-      )}&key=${encodeURIComponent(cfg.apiKey)}`;
-    if (yt.pageToken) url += '&pageToken=' + encodeURIComponent(yt.pageToken);
-    const r = await getJson(url);
-    if (gen !== yt.gen) return;
-    yt.chatError = null;
-    yt.pageToken = r.nextPageToken || yt.pageToken;
-    for (const m of r.items || []) {
-      if (yt.seen.has(m.id)) continue;
-      yt.seen.add(m.id);
-      if (!yt.chatPrimed) continue; // 接続前のメッセージは数えない
-      const sn = m.snippet || {};
-      if (sn.type === 'membershipGiftingEvent' && state.settings.sources.gift === 'youtube') {
-        const n = Number(sn.membershipGiftingDetails && sn.membershipGiftingDetails.giftMembershipsCount) || 1;
-        addValue('gift', n);
-        changed();
-      }
-    }
-    if (yt.seen.size > 20000) yt.seen = new Set([...yt.seen].slice(-5000));
-    yt.chatPrimed = true;
-    if (r.pollingIntervalMillis) wait = Math.max(wait, r.pollingIntervalMillis);
-  } catch (e) {
-    if (gen !== yt.gen) return;
-    yt.chatError = e.message;
-    ytStatus('error', 'ライブチャット取得エラー: ' + e.message);
-    if (e.reason === 'liveChatEnded' || e.reason === 'liveChatNotFound') {
-      yt.liveChatId = null;
-      return;
-    }
-    wait = e.reason === 'quotaExceeded' ? 10 * 60 * 1000 : 30000;
-  }
-  yt.chatTimer = setTimeout(() => pollChat(gen), wait);
+  if (added) changed();
 }
 
 // ---------------------------------------------------------------------------
@@ -864,12 +704,15 @@ const actions = {
       if (r.shuffleEachSpin !== undefined) cur.roulette.shuffleEachSpin = !!r.shuffleEachSpin;
       if (r.alwaysShow !== undefined) cur.roulette.alwaysShow = !!r.alwaysShow;
     }
-    if (JSON.stringify(cur.onecomme) !== ocBefore) setImmediate(oneCommeRestart);
-    if (JSON.stringify([cur.youtube, cur.sources]) !== ytBefore) setImmediate(youtubeRestart);
+    // 接続先の変更はブラウザ側（connector.js）が状態の更新を見て再接続する
+    if (JSON.stringify(cur.onecomme) !== ocBefore) status.onecomme = { state: 'connecting', message: '再接続中…' };
+    if (JSON.stringify([cur.youtube, cur.sources]) !== ytBefore) {
+      status.youtube = { state: 'connecting', message: '再接続中…' };
+      giftSince = Date.now();
+    }
   },
   reconnect() {
-    setImmediate(oneCommeRestart);
-    setImmediate(youtubeRestart);
+    broadcast({ t: 'reconnect' });
   },
   resetLikesBase() {
     state.likes.base = state.likes.raw || 0;
@@ -961,19 +804,6 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
 
-  if (p === '/events') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store',
-      Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-    });
-    res.write('retry: 2000\n\n');
-    send(res, { t: 'state', state: publicState() });
-    clients.add(res);
-    req.on('close', () => clients.delete(res));
-    return;
-  }
   if (p === '/api/state') return json(res, 200, publicState());
   if (p === '/api/action' && req.method === 'POST') {
     try {
@@ -1021,10 +851,11 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-// SSE の接続維持
-setInterval(() => {
-  for (const c of clients) c.write(': ping\n\n');
-}, 20000);
+server.on('upgrade', (req, socket) => handleUpgrade(req, socket));
+
+// 想定外のエラーでもサーバーを止めない（配信中に落ちないための保険）
+process.on('uncaughtException', e => console.error('[uncaughtException]', e && e.message ? e.message : e));
+process.on('unhandledRejection', e => console.error('[unhandledRejection]', e && e.message ? e.message : e));
 
 server.listen(PORT, HOST, () => {
   console.log('======================================================');
@@ -1033,10 +864,10 @@ server.listen(PORT, HOST, () => {
   console.log(` OBS用      : http://localhost:${PORT}/overlay/counter.html`);
   console.log(`              http://localhost:${PORT}/overlay/meter.html`);
   console.log(`              http://localhost:${PORT}/overlay/roulette.html`);
+  console.log(' ※ わんコメ・YouTube の自動カウントは、操作パネルか');
+  console.log('   OBS の画面が開いている間に行われます');
   console.log(' 終了するにはこのウィンドウを閉じてください');
   console.log('======================================================');
-  oneCommeRestart();
-  youtubeRestart();
 });
 
 server.on('error', err => {
