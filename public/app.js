@@ -1,7 +1,7 @@
 'use strict';
 
 // server.js の VERSION と合わせる
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 
 let S = null; // サーバーから受け取った状態
 let selectedTpl = 0;
@@ -662,6 +662,8 @@ function setup() {
     ['メーター（横）', '/overlay/meter.html'],
     ['メーター（縦）', '/overlay/meter.html?vertical=1'],
     ['ルーレット', '/overlay/roulette.html'],
+    ['ティア表', '/overlay/tier.html'],
+    ['ティア表（表示だけ）', '/overlay/tier.html?view=1'],
   ];
   $('#urls').innerHTML = urls
     .map(

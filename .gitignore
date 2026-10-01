@@ -3,3 +3,4 @@ data.json.tmp
 node_modules/
 sounds/*
 !sounds/README.txt
+tier-images/

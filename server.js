@@ -1,5 +1,5 @@
 'use strict';
-// 配信用カウンター & 盛り上がりメーター & ルーレット
+// 配信用カウンター & 盛り上がりメーター & ルーレット & ティア表
 // 依存パッケージなし（Node.js 標準モジュールのみ）で動作します。
 // このサーバーは外部へは接続しません。わんコメ・YouTube の取得はブラウザ側（public/connector.js）が行います。
 
@@ -14,9 +14,13 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_FILE = path.join(__dirname, 'data.json');
 const SOUNDS_DIR = path.join(__dirname, 'sounds'); // ルーレット用の音声ファイル置き場
 const SOUND_EXT = ['.mp3', '.wav', '.ogg', '.m4a'];
+const TIER_DIR = path.join(__dirname, 'tier-images'); // ティア表の画像置き場（正方形に加工済み）
+const TIER_FILE_RE = /^[0-9a-f-]{36}\.(png|jpg|webp)$/;
+const TIER_ROW_MAX = 30;
+const TIER_IMAGE_MAX = 500;
 
 // 画面側（public/app.js の APP_VERSION）と合わせる。ずれていると操作パネルに再起動の案内が出る
-const VERSION = 9;
+const VERSION = 10;
 
 const TEMPLATE_COUNT = 30;
 const CUSTOM_COUNT = 10;
@@ -50,6 +54,53 @@ function defaultTemplates() {
   return list;
 }
 
+const TIER_COLORS = ['#ec6b6b', '#f28b2c', '#f5c400', '#b5e533', '#6fdc7f', '#5ccfe6', '#6f9ef0', '#b48cf0', '#f08cd2', '#c8c8c8'];
+
+function defaultTier() {
+  const rows = ['S', 'A', 'B', 'C', 'D'].map((label, i) => ({ id: crypto.randomUUID(), label, color: TIER_COLORS[i], items: [] }));
+  return { title: '', tileSize: 100, rows, pool: [], images: {} };
+}
+
+// 保存データのティア表を検査して、壊れた参照や重複を取り除く
+function sanitizeTier(t) {
+  const out = defaultTier();
+  if (!t || typeof t !== 'object') return out;
+  out.title = String(t.title || '').slice(0, 60);
+  out.tileSize = clampInt(t.tileSize, 40, 240, 100);
+  const images = {};
+  if (t.images && typeof t.images === 'object') {
+    for (const [id, img] of Object.entries(t.images)) {
+      if (!img || !TIER_FILE_RE.test(String(img.file || ''))) continue;
+      if (!fs.existsSync(path.join(TIER_DIR, img.file))) continue;
+      images[id] = { file: img.file, name: String(img.name || '').slice(0, 80) };
+    }
+  }
+  out.images = images;
+  const placed = new Set();
+  const take = list =>
+    (Array.isArray(list) ? list : []).map(String).filter(id => {
+      if (!images[id] || placed.has(id)) return false;
+      placed.add(id);
+      return true;
+    });
+  if (Array.isArray(t.rows) && t.rows.length) {
+    out.rows = t.rows.slice(0, TIER_ROW_MAX).map((r, i) => ({
+      id: String((r && r.id) || crypto.randomUUID()),
+      label: String((r && r.label) ?? '').slice(0, 40),
+      color: safeColor(r && r.color) || TIER_COLORS[i % TIER_COLORS.length],
+      items: take(r && r.items),
+    }));
+  }
+  out.pool = take(t.pool);
+  for (const id of Object.keys(images)) if (!placed.has(id)) out.pool.push(id);
+  return out;
+}
+
+function safeColor(v) {
+  const s = String(v || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(s) ? s.toLowerCase() : '';
+}
+
 function defaultState() {
   return {
     items: defaultItems(),
@@ -77,6 +128,7 @@ function defaultState() {
     likes: { base: 0, raw: null, videoId: '' },
     roulette: { templates: defaultTemplates(), active: 0, queue: 0, history: [] },
     order: [], // 項目の表示順（id の並び。空なら既定の順）
+    tier: defaultTier(),
   };
 }
 
@@ -104,6 +156,7 @@ function loadState() {
     }
     Object.assign(s.meter, saved.meter || {});
     Object.assign(s.likes, saved.likes || {});
+    s.tier = sanitizeTier(saved.tier);
     if (Array.isArray(saved.order)) s.order = saved.order.filter(id => s.items.some(i => i.id === id));
     if (saved.roulette) {
       const r = saved.roulette;
@@ -251,6 +304,7 @@ function sendTo(client, obj) {
 function broadcast(obj) {
   const frame = encodeFrame(JSON.stringify(obj));
   for (const c of clients) {
+    if (c.role === 'tier') continue; // ティア表の画面はカウンター等の状態を使わない
     try {
       c.socket.write(frame);
     } catch (e) {}
@@ -356,6 +410,11 @@ function handleUpgrade(req, socket) {
 function onMessage(client, msg) {
   switch (msg.cmd) {
     case 'hello':
+      if (msg.role === 'tier') {
+        client.role = 'tier';
+        sendTo(client, { t: 'tier', tier: state.tier, version: VERSION });
+        break;
+      }
       client.role = msg.role === 'panel' ? 'panel' : 'overlay';
       sendTo(client, { t: 'state', state: publicState() });
       if (!leader || (client.role === 'panel' && leader.role !== 'panel')) {
@@ -379,6 +438,17 @@ function onMessage(client, msg) {
       break;
     case 'gifts':
       if (client === leader) handleYoutubeGifts(msg.gifts);
+      break;
+    // ティア表の操作（並び替え・行の編集など）
+    case 'tier':
+      try {
+        if (!Object.prototype.hasOwnProperty.call(tierOps, msg.op)) throw new Error('不明な操作: ' + msg.op);
+        tierOps[msg.op](msg);
+        tierChanged();
+      } catch (e) {
+        sendTo(client, { t: 'tierError', error: e.message });
+        sendTo(client, { t: 'tier', tier: state.tier, version: VERSION });
+      }
       break;
     // OBS のルーレット画面からの効果音の再生結果
     case 'soundReport':
@@ -856,6 +926,143 @@ const actions = {
 };
 
 // ---------------------------------------------------------------------------
+// ティア表
+// ---------------------------------------------------------------------------
+
+let tierTimer = null;
+function tierChanged() {
+  scheduleSave();
+  if (tierTimer) return;
+  tierTimer = setTimeout(() => {
+    tierTimer = null;
+    const frame = encodeFrame(JSON.stringify({ t: 'tier', tier: state.tier, version: VERSION }));
+    for (const c of clients) {
+      if (c.role !== 'tier') continue;
+      try {
+        c.socket.write(frame);
+      } catch (e) {}
+    }
+  }, 30);
+}
+
+function hasTierImage(id) {
+  return Object.prototype.hasOwnProperty.call(state.tier.images, String(id));
+}
+
+function tierRow(id) {
+  const r = state.tier.rows.find(x => x.id === id);
+  if (!r) throw new Error('行が見つかりません');
+  return r;
+}
+
+// 画像をどの行（またはストック）からも外す
+function tierDetach(id) {
+  const T = state.tier;
+  T.pool = T.pool.filter(x => x !== id);
+  for (const r of T.rows) r.items = r.items.filter(x => x !== id);
+}
+
+// 次の行の名前（D の次は E のように）
+function nextTierLabel() {
+  const rows = state.tier.rows;
+  const last = rows.length ? rows[rows.length - 1].label : '';
+  if (/^[A-Ya-y]$/.test(last)) return String.fromCharCode(last.charCodeAt(0) + 1);
+  return '新しい行';
+}
+
+function deleteTierFile(file) {
+  if (!TIER_FILE_RE.test(file)) return;
+  // 同じファイルを他の画像が使っていなければ消す
+  if (Object.values(state.tier.images).some(img => img.file === file)) return;
+  fs.unlink(path.join(TIER_DIR, file), () => {});
+}
+
+const tierOps = {
+  // 画像を行（to=行ID）またはストック（to='pool'）の index 番目へ移動
+  move({ id, to, index }) {
+    const T = state.tier;
+    if (!hasTierImage(id)) throw new Error('画像が見つかりません');
+    if (to !== 'pool') tierRow(to); // 行が無ければここでエラー
+    tierDetach(id); // 配列が作り直されるので、入れ先は外したあとで取る
+    const list = to === 'pool' ? T.pool : tierRow(to).items;
+    const i = clampInt(index, 0, list.length, list.length);
+    list.splice(i, 0, id);
+  },
+  deleteImage({ id }) {
+    const T = state.tier;
+    if (!hasTierImage(id)) return;
+    const img = T.images[id];
+    tierDetach(id);
+    delete T.images[id];
+    deleteTierFile(img.file);
+  },
+  deleteAllImages() {
+    const T = state.tier;
+    const files = Object.values(T.images).map(i => i.file);
+    T.images = {};
+    T.pool = [];
+    for (const r of T.rows) r.items = [];
+    files.forEach(deleteTierFile);
+  },
+  // 全部の画像をストックへ戻す（行の並び順のまま）
+  resetAll() {
+    const T = state.tier;
+    for (const r of T.rows) {
+      T.pool.push(...r.items);
+      r.items = [];
+    }
+  },
+  addRow({ at, label, color }) {
+    const T = state.tier;
+    if (T.rows.length >= TIER_ROW_MAX) throw new Error(`行は${TIER_ROW_MAX}個までです`);
+    const row = {
+      id: crypto.randomUUID(),
+      label: label !== undefined ? String(label).slice(0, 40) : nextTierLabel(),
+      color: safeColor(color) || TIER_COLORS[T.rows.length % TIER_COLORS.length],
+      items: [],
+    };
+    T.rows.splice(clampInt(at, 0, T.rows.length, T.rows.length), 0, row);
+  },
+  updateRow({ id, label, color }) {
+    const r = tierRow(id);
+    if (label !== undefined) r.label = String(label).slice(0, 40);
+    if (color !== undefined && safeColor(color)) r.color = safeColor(color);
+  },
+  moveRow({ id, dir }) {
+    const rows = state.tier.rows;
+    const i = rows.findIndex(r => r.id === id);
+    const j = i + (Number(dir) < 0 ? -1 : 1);
+    if (i < 0 || j < 0 || j >= rows.length) return;
+    [rows[i], rows[j]] = [rows[j], rows[i]];
+  },
+  clearRow({ id }) {
+    const r = tierRow(id);
+    state.tier.pool.push(...r.items);
+    r.items = [];
+  },
+  deleteRow({ id }) {
+    const T = state.tier;
+    const r = tierRow(id);
+    if (T.rows.length <= 1) throw new Error('最後の1行は削除できません');
+    T.pool.push(...r.items);
+    T.rows = T.rows.filter(x => x !== r);
+  },
+  setOptions({ title, tileSize }) {
+    const T = state.tier;
+    if (title !== undefined) T.title = String(title).slice(0, 60);
+    if (tileSize !== undefined) T.tileSize = clampInt(tileSize, 40, 240, 100);
+  },
+};
+
+// 画像の先頭バイトから形式を判定（png / jpg / webp 以外は受け付けない）
+function imageExt(buf) {
+  if (buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // HTTP サーバー
 // ---------------------------------------------------------------------------
 
@@ -866,6 +1073,7 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
@@ -972,6 +1180,59 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---- ティア表の画像 ----
+  if (p === '/tier/upload' && req.method === 'POST') {
+    const chunks = [];
+    let size = 0;
+    let tooBig = false;
+    req.on('data', c => {
+      size += c.length;
+      if (size > 10 * 1024 * 1024) {
+        tooBig = true;
+        return req.destroy();
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      if (tooBig) return json(res, 413, { ok: false, error: '画像が大きすぎます（10MBまで）' });
+      const T = state.tier;
+      if (Object.keys(T.images).length >= TIER_IMAGE_MAX) return json(res, 400, { ok: false, error: `画像は${TIER_IMAGE_MAX}枚までです` });
+      const buf = Buffer.concat(chunks);
+      const ext = imageExt(buf);
+      if (!ext) return json(res, 400, { ok: false, error: '画像（png / jpg / webp）を選んでください' });
+      const id = crypto.randomUUID();
+      const file = id + '.' + ext;
+      fs.mkdir(TIER_DIR, { recursive: true }, () => {
+        fs.writeFile(path.join(TIER_DIR, file), buf, err => {
+          if (err) return json(res, 500, { ok: false, error: '保存できませんでした: ' + err.message });
+          T.images[id] = { file, name: String(url.searchParams.get('name') || '').slice(0, 80) };
+          T.pool.push(id);
+          tierChanged();
+          json(res, 200, { ok: true, id });
+        });
+      });
+    });
+    req.on('error', () => {});
+    return;
+  }
+  if (p.startsWith('/tier-images/')) {
+    const name = p.slice('/tier-images/'.length);
+    if (!TIER_FILE_RE.test(name)) {
+      res.writeHead(404);
+      return res.end();
+    }
+    fs.readFile(path.join(TIER_DIR, name), (err, data) => {
+      if (err) {
+        res.writeHead(404);
+        return res.end();
+      }
+      // ファイル名は毎回新しく作るので中身は変わらない → 長めにキャッシュ
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(name)] || 'application/octet-stream', 'Cache-Control': 'max-age=31536000, immutable' });
+      res.end(data);
+    });
+    return;
+  }
+
   if (p === '/api/spin') {
     actions.spin();
     changed();
@@ -1031,11 +1292,12 @@ process.on('unhandledRejection', e => console.error('[unhandledRejection]', e &&
 
 server.listen(PORT, HOST, () => {
   console.log('======================================================');
-  console.log(' 配信カウンター & 盛り上がりメーター 起動しました');
+  console.log(' 配信カウンター & 盛り上がりメーター & ティア表 起動しました');
   console.log(` 操作パネル : http://localhost:${PORT}/`);
   console.log(` OBS用      : http://localhost:${PORT}/overlay/counter.html`);
   console.log(`              http://localhost:${PORT}/overlay/meter.html`);
   console.log(`              http://localhost:${PORT}/overlay/roulette.html`);
+  console.log(`              http://localhost:${PORT}/overlay/tier.html （ティア表）`);
   console.log(' ※ わんコメ・YouTube の自動カウントは、操作パネルか');
   console.log('   OBS の画面が開いている間に行われます');
   console.log(' 終了するにはこのウィンドウを閉じてください');
