@@ -662,8 +662,6 @@ function setup() {
     ['メーター（横）', '/overlay/meter.html'],
     ['メーター（縦）', '/overlay/meter.html?vertical=1'],
     ['ルーレット', '/overlay/roulette.html'],
-    ['ティア表', '/overlay/tier.html'],
-    ['ティア表（表示だけ）', '/overlay/tier.html?view=1'],
   ];
   $('#urls').innerHTML = urls
     .map(

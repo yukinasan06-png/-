@@ -1,0 +1,1085 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ティア表</title>
+<style>
+  :root {
+    --tile: 100px;
+    --bg: #1f2024;
+    --row-bg: #4a4d57;
+    --pool-bg: #34363d;
+    --line: #2a2b30;
+    --accent: #8ab4ff;
+  }
+  * { box-sizing: border-box; }
+  /* 背景は html に付ける（OBS の「カスタムCSS」は body の背景を透明にするため） */
+  html { background: var(--bg); }
+  html.transparent { background: transparent; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: transparent;
+    color: #f2f2f4;
+    font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", "Hiragino Sans", sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow-x: hidden;
+  }
+  #app { padding: 14px 18px 18px; }
+
+  #title { margin: 0 0 10px; font-size: 30px; font-weight: 800; text-align: center; letter-spacing: .04em; text-shadow: 0 2px 6px rgba(0,0,0,.5); }
+  #title:empty { display: none; }
+
+  /* ---- 行 ---- */
+  .tier { display: flex; margin-bottom: 10px; min-height: calc(var(--tile) + 8px); background: var(--row-bg); }
+  .label {
+    flex: 0 0 calc(var(--tile) * 1.4);
+    display: flex; align-items: center; justify-content: center;
+    padding: 6px; text-align: center; color: #111;
+    font-size: 22px; font-weight: 600; line-height: 1.2;
+    word-break: break-all; cursor: pointer;
+  }
+  .label.mid { font-size: 17px; }
+  .label.small { font-size: 13px; }
+  .label.light { color: #fff; }
+  .items {
+    flex: 1; display: flex; flex-wrap: wrap; align-content: flex-start;
+    gap: 2px; padding: 4px; min-height: calc(var(--tile) + 8px);
+  }
+
+  /* ---- 画像タイル ---- */
+  .tile { width: var(--tile); height: var(--tile); flex: 0 0 auto; cursor: grab; touch-action: none; background: #26272c; }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; -webkit-user-drag: none; }
+  .tile.placeholder { opacity: .3; outline: 2px dashed #fff; outline-offset: -2px; }
+  .tile.ghost {
+    position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; cursor: grabbing;
+    box-shadow: 0 8px 24px rgba(0,0,0,.6); outline: 2px solid #fff;
+  }
+  body.dragging, body.dragging * { cursor: grabbing !important; }
+
+  #add-row {
+    display: block; width: 100%; margin: 0 0 14px; padding: 6px;
+    background: transparent; color: #9a9ca6; border: 2px dashed #4a4d57; border-radius: 6px;
+    font: inherit; font-size: 14px; cursor: pointer;
+  }
+  #add-row:hover { color: #fff; border-color: #777a86; }
+
+  /* ---- ストック ---- */
+  #pool-wrap { background: var(--pool-bg); border-radius: 6px; }
+  .pool-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 14px; color: #c9cad2; }
+  .pool-head .sp { flex: 1; }
+  .url-bar { display: flex; gap: 6px; padding: 0 10px 8px; }
+  .url-bar[hidden] { display: none; }
+  .url-bar input {
+    flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid #555865;
+    background: #1d1e22; color: #fff; font: inherit; font-size: 13px; user-select: text; -webkit-user-select: text;
+  }
+  body.ui-hidden .url-bar { display: none; }
+  #pool { min-height: calc(var(--tile) + 8px); }
+  #pool:empty::before {
+    content: "「＋ 画像を追加」から画像を入れてください（画像をコピーして Ctrl+V、URL でも追加できます）";
+    color: #8d8f99; font-size: 13px; padding: 8px;
+  }
+  body.pool-hidden #pool { display: none; }
+
+  button.btn {
+    background: #5a5d69; color: #fff; border: 0; border-radius: 6px; padding: 5px 10px;
+    font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  button.btn:hover { background: #6b6f7d; }
+  button.btn.primary { background: #3d6fd8; }
+  button.btn.primary:hover { background: #4b7fe8; }
+  button.btn.danger { background: #8e3b44; }
+  button.btn.danger:hover { background: #a8464f; }
+  button.btn.armed { background: #d9363e; }
+
+  /* 操作ボタンを隠すモード */
+  body.ui-hidden #add-row, body.ui-hidden .pool-head .ui { display: none; }
+  body.ui-hidden #gear { opacity: .12; }
+  body.ui-hidden #gear:hover { opacity: 1; }
+
+  /* 表示専用（?view=1） */
+  body.view #add-row, body.view #pool-wrap, body.view #gear { display: none; }
+  body.view .label, body.view .tile { cursor: default; }
+
+  #gear {
+    position: fixed; top: 8px; right: 8px; z-index: 50; width: 34px; height: 34px;
+    border: 0; border-radius: 50%; background: rgba(30,31,36,.85); color: #fff; font-size: 18px; cursor: pointer;
+  }
+
+  /* ---- 吹き出し（設定・行の編集） ---- */
+  .pop {
+    position: fixed; z-index: 100; width: 300px; max-width: calc(100vw - 16px);
+    background: #2b2d33; border: 1px solid #555865; border-radius: 10px; padding: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.55); font-size: 13px;
+  }
+  .pop[hidden] { display: none; }
+  .pop h3 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; }
+  .pop h3 .x { margin-left: auto; background: none; border: 0; color: #aaa; font-size: 18px; cursor: pointer; }
+  .pop .f { margin-bottom: 10px; }
+  .pop .f > span { display: block; color: #aeb0ba; margin-bottom: 4px; }
+  .pop input[type=text] {
+    width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid #555865;
+    background: #1d1e22; color: #fff; font: inherit; font-size: 14px; user-select: text; -webkit-user-select: text;
+  }
+  .pop input[type=range] { width: 100%; }
+  .pop .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .pop .seg { display: flex; gap: 4px; }
+  .pop .seg button { flex: 1; }
+  .pop .seg button.on { background: #3d6fd8; }
+  .pop label.chk { display: flex; align-items: center; gap: 6px; margin: 4px 0; cursor: pointer; }
+  .pop .hint { color: #8d8f99; font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .swatches button { width: 24px; height: 24px; border-radius: 4px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+  .swatches button.on { border-color: #fff; }
+  .swatches input[type=color] { width: 30px; height: 26px; border: 0; padding: 0; background: none; cursor: pointer; }
+
+  #trash {
+    position: fixed; right: 16px; bottom: 16px; z-index: 900; display: none;
+    padding: 18px 22px; border-radius: 12px; border: 2px dashed #e06c75;
+    background: rgba(60,20,24,.9); color: #ffb3b9; font-size: 15px; font-weight: 600;
+  }
+  body.dragging #trash { display: block; }
+  #trash.over { background: #c0392b; color: #fff; border-style: solid; }
+
+  #drop-cover {
+    position: fixed; inset: 0; z-index: 2000; display: none; align-items: center; justify-content: center;
+    background: rgba(20,30,60,.75); border: 4px dashed var(--accent); color: #fff; font-size: 26px; font-weight: 700;
+  }
+  #drop-cover.on { display: flex; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3000;
+    background: rgba(20,20,24,.92); color: #fff; padding: 8px 16px; border-radius: 8px; font-size: 14px;
+    opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  #toast.on { opacity: 1; }
+  #conn {
+    position: fixed; left: 8px; top: 8px; z-index: 3000; display: none;
+    background: #8e3b44; color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 13px;
+  }
+  #conn.on { display: block; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1 id="title"></h1>
+  <div id="rows"></div>
+  <button id="add-row">＋ 行を追加</button>
+  <section id="pool-wrap">
+    <div class="pool-head">
+      <span>ストック（未配置）<b id="pool-count">0</b>枚</span>
+      <span class="sp"></span>
+      <button class="btn primary ui" id="add-image">＋ 画像を追加</button>
+      <button class="btn ui" id="toggle-url">🔗 URLで追加</button>
+      <button class="btn ui" id="toggle-pool">▼ 隠す</button>
+    </div>
+    <div class="url-bar ui" id="url-bar" hidden>
+      <input type="text" id="url-input" placeholder="画像のURLを貼り付け（Ctrl+V）→ Enter">
+      <button class="btn primary" id="url-add">追加</button>
+    </div>
+    <div id="pool" class="items" data-drop="pool"></div>
+  </section>
+</div>
+
+<button id="gear" title="設定">⚙</button>
+
+<div class="pop" id="settings" hidden>
+  <h3>ティア表の設定 <button class="x" data-close>×</button></h3>
+  <div class="f"><span>タイトル（空欄なら表示しません）</span><input type="text" id="opt-title" maxlength="60" placeholder="例：ラーメン ティア表"></div>
+  <div class="f"><span>画像の大きさ：<b id="opt-size-v">100</b>px</span><input type="range" id="opt-size" min="40" max="240" step="10"></div>
+  <div class="f"><span>画像を追加するときの正方形にする方法</span>
+    <div class="seg" id="opt-fit">
+      <button class="btn" data-fit="cover">中央を切り抜く</button>
+      <button class="btn" data-fit="contain">全体を入れる（余白）</button>
+    </div>
+  </div>
+  <div class="f">
+    <label class="chk"><input type="checkbox" id="opt-hide-pool"> ストック（未配置の画像）を隠す</label>
+    <label class="chk"><input type="checkbox" id="opt-hide-ui"> 操作ボタンを隠す（⚙ は薄く残ります）</label>
+    <label class="chk"><input type="checkbox" id="opt-transparent"> 背景を透明にする</label>
+  </div>
+  <div class="grid">
+    <button class="btn" id="opt-add-image">＋ 画像を追加</button>
+    <button class="btn" id="opt-add-row">＋ 行を追加</button>
+    <button class="btn" id="opt-reset">全部ストックへ戻す</button>
+    <button class="btn danger" id="opt-delete-all">画像を全部削除</button>
+  </div>
+  <p class="hint">
+    ・画像はドラッグで行へ移動。右下の 🗑 に離すと削除<br>
+    ・行のラベル（S・A…）をクリックすると名前・色の変更や行の追加・削除ができます<br>
+    ・画像の追加方法：「＋ 画像を追加」／画像をコピーして Ctrl+V／「🔗 URLで追加」<br>
+    ・OBS で画像を選ぶ画面が開かないときは、エクスプローラーで画像ファイルを選んで Ctrl+C →この画面で Ctrl+V<br>
+    ・データはこのパソコンの OBS の中に自動で保存されます
+  </p>
+</div>
+
+<div class="pop" id="row-pop" hidden>
+  <h3>行の編集 <button class="x" data-close>×</button></h3>
+  <div class="f"><span>名前</span><input type="text" id="row-label" maxlength="40"></div>
+  <div class="f"><span>色</span><div class="swatches" id="row-colors"></div></div>
+  <div class="grid">
+    <button class="btn" data-row="up">↑ 上へ移動</button>
+    <button class="btn" data-row="down">↓ 下へ移動</button>
+    <button class="btn" data-row="addAbove">＋ 上に行を追加</button>
+    <button class="btn" data-row="addBelow">＋ 下に行を追加</button>
+    <button class="btn" data-row="clear">画像をストックへ戻す</button>
+    <button class="btn danger" data-row="delete">この行を削除</button>
+  </div>
+</div>
+
+<div id="trash">🗑 ここに離すと削除</div>
+<div id="drop-cover">画像をドロップして追加</div>
+<div id="toast"></div>
+<div id="conn"></div>
+<input type="file" id="file" accept="image/*" multiple hidden>
+
+<script>
+'use strict';
+// このファイルだけで動くティア表（サーバー不要）。
+// OBS の「ブラウザ」ソースで「ローカルファイル」として開き、「対話」で操作する。
+// データ（行・並び・画像）はブラウザの IndexedDB に保存されるので、OBS を再起動しても残る。
+const COLORS = ['#ec6b6b', '#f28b2c', '#f5c400', '#b5e533', '#6fdc7f', '#5ccfe6', '#6f9ef0', '#b48cf0', '#f08cd2', '#c8c8c8'];
+const IMAGE_SIZE = 300; // 取り込んだ画像はこの大きさの正方形にそろえる
+
+const params = new URLSearchParams(location.search);
+const VIEW_ONLY = params.get('view') === '1';
+const BG_PARAM = params.get('bg') === 'transparent';
+if (VIEW_ONLY) document.body.classList.add('view');
+
+const $ = s => document.querySelector(s);
+let T = null; // サーバーから届いたティア表
+let reloadPending = false; // ドラッグ中に別の画面で変更があった
+
+// ---------------------------------------------------------------------------
+// この画面だけの設定（OBS とブラウザで別々に覚える）
+// ---------------------------------------------------------------------------
+const local = { fit: 'cover', hidePool: false, hideUi: false, transparent: false };
+try {
+  Object.assign(local, JSON.parse(localStorage.getItem('tierLocal') || '{}'));
+} catch (e) {}
+function saveLocal() {
+  try {
+    localStorage.setItem('tierLocal', JSON.stringify(local));
+  } catch (e) {}
+  applyLocal();
+}
+function applyLocal() {
+  document.body.classList.toggle('pool-hidden', !!local.hidePool);
+  document.body.classList.toggle('ui-hidden', !!local.hideUi);
+  $('#toggle-pool').textContent = local.hidePool ? '▲ 表示' : '▼ 隠す';
+  $('#opt-hide-pool').checked = !!local.hidePool;
+  $('#opt-hide-ui').checked = !!local.hideUi;
+  $('#opt-transparent').checked = !!local.transparent;
+  document.documentElement.classList.toggle('transparent', BG_PARAM || !!local.transparent);
+  document.querySelectorAll('#opt-fit button').forEach(b => b.classList.toggle('on', b.dataset.fit === local.fit));
+}
+applyLocal();
+
+// ---------------------------------------------------------------------------
+// 保存（IndexedDB）
+// ---------------------------------------------------------------------------
+const DB = (() => {
+  let opening = null;
+  function open() {
+    if (!opening) {
+      opening = new Promise((resolve, reject) => {
+        const req = indexedDB.open('tierlist', 1);
+        req.onupgradeneeded = () => {
+          req.result.createObjectStore('kv');
+          req.result.createObjectStore('images');
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    return opening;
+  }
+  async function run(store, mode, fn) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(store, mode);
+      const req = fn(tx.objectStore(store));
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+  return {
+    get: (store, key) => run(store, 'readonly', s => s.get(key)),
+    put: (store, key, value) => run(store, 'readwrite', s => s.put(value, key)),
+    del: (store, key) => run(store, 'readwrite', s => s.delete(key)),
+    clear: store => run(store, 'readwrite', s => s.clear()),
+  };
+})();
+
+let storageWarned = false;
+function storageFailed() {
+  if (storageWarned) return;
+  storageWarned = true;
+  setConn('この環境では保存できません（閉じると消えます）');
+}
+function setConn(text) {
+  $('#conn').textContent = text;
+  $('#conn').classList.toggle('on', !!text);
+}
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+const ROW_MAX = 30;
+
+function defaultTier() {
+  const rows = ['S', 'A', 'B', 'C', 'D'].map((label, i) => ({ id: uid(), label, color: COLORS[i], items: [] }));
+  return { title: '', tileSize: 100, rows, pool: [], images: {} };
+}
+
+function safeColor(v) {
+  const c = String(v || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(c) ? c.toLowerCase() : '';
+}
+
+// 保存データを検査して、壊れた参照や重複を取り除く（どこにも無い画像はストックへ）
+function sanitize(t) {
+  const out = defaultTier();
+  if (!t || typeof t !== 'object') return out;
+  out.title = String(t.title || '').slice(0, 60);
+  out.tileSize = Math.min(240, Math.max(40, Math.round(Number(t.tileSize) || 100)));
+  const images = {};
+  for (const [id, img] of Object.entries((t.images && typeof t.images === 'object' && t.images) || {})) {
+    if (!img) continue;
+    images[id] = { name: String(img.name || '').slice(0, 80) };
+    if (img.url) {
+      images[id].url = String(img.url);
+      images[id].fit = img.fit === 'contain' ? 'contain' : 'cover';
+    }
+  }
+  out.images = images;
+  const placed = new Set();
+  const take = list =>
+    (Array.isArray(list) ? list : []).map(String).filter(id => {
+      if (!Object.prototype.hasOwnProperty.call(images, id) || placed.has(id)) return false;
+      placed.add(id);
+      return true;
+    });
+  if (Array.isArray(t.rows) && t.rows.length) {
+    out.rows = t.rows.slice(0, ROW_MAX).map((r, i) => ({
+      id: String((r && r.id) || uid()),
+      label: String((r && r.label) ?? '').slice(0, 40),
+      color: safeColor(r && r.color) || COLORS[i % COLORS.length],
+      items: take(r && r.items),
+    }));
+  }
+  out.pool = take(t.pool);
+  for (const id of Object.keys(images)) if (!placed.has(id)) out.pool.push(id);
+  return out;
+}
+
+const blobUrls = new Map(); // 画像ID → 表示用URL
+
+async function load() {
+  let saved = null;
+  try {
+    saved = await DB.get('kv', 'state');
+  } catch (e) {
+    storageFailed();
+  }
+  const t = sanitize(saved || T);
+  for (const id of Object.keys(t.images)) {
+    if (t.images[id].url || blobUrls.has(id)) continue;
+    let blob = null;
+    try {
+      blob = await DB.get('images', id);
+    } catch (e) {}
+    if (blob) blobUrls.set(id, URL.createObjectURL(blob));
+    else delete t.images[id];
+  }
+  T = sanitize(t);
+  render();
+}
+
+// 同じ OBS の中の別のソース（?view=1 など）にも変更を知らせる
+let channel = null;
+try {
+  channel = new BroadcastChannel('tierlist');
+  channel.onmessage = () => {
+    if (drag) reloadPending = true;
+    else load();
+  };
+} catch (e) {}
+
+let saveTimer = null;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      await DB.put('kv', 'state', T);
+      if (channel) channel.postMessage('changed');
+    } catch (e) {
+      storageFailed();
+    }
+  }, 150);
+}
+
+function forgetImage(id) {
+  const u = blobUrls.get(id);
+  if (u) URL.revokeObjectURL(u);
+  blobUrls.delete(id);
+  DB.del('images', id).catch(() => {});
+}
+
+function findRow(id) {
+  const r = T.rows.find(x => x.id === id);
+  if (!r) throw new Error('行が見つかりません');
+  return r;
+}
+function detach(id) {
+  T.pool = T.pool.filter(x => x !== id);
+  for (const r of T.rows) r.items = r.items.filter(x => x !== id);
+}
+function nextLabel() {
+  const last = T.rows.length ? T.rows[T.rows.length - 1].label : '';
+  if (/^[A-Ya-y]$/.test(last)) return String.fromCharCode(last.charCodeAt(0) + 1);
+  return '新しい行';
+}
+
+// ティア表の操作
+const Ops = {
+  move({ id, to, index }) {
+    if (!T.images[id]) return;
+    if (to !== 'pool') findRow(to);
+    detach(id);
+    const list = to === 'pool' ? T.pool : findRow(to).items;
+    const i = Math.min(list.length, Math.max(0, Number.isInteger(index) ? index : list.length));
+    list.splice(i, 0, id);
+  },
+  deleteImage({ id }) {
+    detach(id);
+    delete T.images[id];
+    forgetImage(id);
+  },
+  deleteAllImages() {
+    T.images = {};
+    T.pool = [];
+    for (const r of T.rows) r.items = [];
+    for (const u of blobUrls.values()) URL.revokeObjectURL(u);
+    blobUrls.clear();
+    DB.clear('images').catch(() => {});
+  },
+  resetAll() {
+    for (const r of T.rows) {
+      T.pool.push(...r.items);
+      r.items = [];
+    }
+  },
+  addRow({ at, label, color }) {
+    if (T.rows.length >= ROW_MAX) throw new Error(`行は${ROW_MAX}個までです`);
+    const row = {
+      id: uid(),
+      label: label !== undefined ? String(label).slice(0, 40) : nextLabel(),
+      color: safeColor(color) || COLORS[T.rows.length % COLORS.length],
+      items: [],
+    };
+    const i = Number.isInteger(at) ? Math.min(T.rows.length, Math.max(0, at)) : T.rows.length;
+    T.rows.splice(i, 0, row);
+  },
+  updateRow({ id, label, color }) {
+    const r = findRow(id);
+    if (label !== undefined) r.label = String(label).slice(0, 40);
+    if (color !== undefined && safeColor(color)) r.color = safeColor(color);
+  },
+  moveRow({ id, dir }) {
+    const i = T.rows.findIndex(r => r.id === id);
+    const j = i + (dir < 0 ? -1 : 1);
+    if (i < 0 || j < 0 || j >= T.rows.length) return;
+    [T.rows[i], T.rows[j]] = [T.rows[j], T.rows[i]];
+  },
+  clearRow({ id }) {
+    const r = findRow(id);
+    T.pool.push(...r.items);
+    r.items = [];
+  },
+  deleteRow({ id }) {
+    const r = findRow(id);
+    if (T.rows.length <= 1) throw new Error('最後の1行は削除できません');
+    T.pool.push(...r.items);
+    T.rows = T.rows.filter(x => x !== r);
+  },
+  setOptions({ title, tileSize }) {
+    if (title !== undefined) T.title = String(title).slice(0, 60);
+    if (tileSize !== undefined) T.tileSize = Math.min(240, Math.max(40, Math.round(Number(tileSize) || 100)));
+  },
+};
+
+function send(op, data) {
+  if (!T) return;
+  try {
+    Ops[op](data || {});
+  } catch (e) {
+    toast(e.message);
+  }
+  save();
+  render();
+}
+
+async function addImageBlob(blob, name) {
+  const id = uid();
+  try {
+    await DB.put('images', id, blob);
+  } catch (e) {
+    storageFailed();
+  }
+  blobUrls.set(id, URL.createObjectURL(blob));
+  T.images[id] = { name: String(name || '').slice(0, 80) };
+  T.pool.push(id);
+  save();
+  render();
+}
+
+let toastTimer = null;
+function toast(text, ms = 2500) {
+  const el = $('#toast');
+  el.textContent = text;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  if (ms) toastTimer = setTimeout(() => el.classList.remove('on'), ms);
+}
+
+// ---------------------------------------------------------------------------
+// 描画
+// ---------------------------------------------------------------------------
+const tiles = new Map(); // 画像ID → タイル要素（使い回してちらつきを防ぐ）
+
+function tileEl(id) {
+  let el = tiles.get(id);
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'tile';
+    el.dataset.id = id;
+    const img = document.createElement('img');
+    img.draggable = false;
+    img.alt = '';
+    el.appendChild(img);
+    el.addEventListener('pointerdown', onTileDown);
+    tiles.set(id, el);
+  }
+  const info = T.images[id];
+  const src = info.url || blobUrls.get(id) || '';
+  if (el.firstChild.getAttribute('src') !== src) el.firstChild.src = src;
+  // URL のまま表示する画像は、表示のときに正方形にする
+  el.firstChild.style.objectFit = info.url && info.fit === 'contain' ? 'contain' : '';
+  el.title = info.name || '';
+  return el;
+}
+
+function isLight(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b > 110;
+}
+
+function render() {
+  if (!T) return;
+  document.documentElement.style.setProperty('--tile', T.tileSize + 'px');
+  $('#title').textContent = T.title || '';
+
+  // 消えた画像のタイルを捨てる
+  for (const id of [...tiles.keys()]) if (!T.images[id]) tiles.delete(id);
+
+  const rows = $('#rows');
+  rows.textContent = '';
+  for (const r of T.rows) {
+    const row = document.createElement('div');
+    row.className = 'tier';
+    row.dataset.row = r.id;
+    const label = document.createElement('div');
+    const len = [...r.label].length;
+    label.className = 'label' + (len > 8 ? ' small' : len > 3 ? ' mid' : '') + (isLight(r.color) ? '' : ' light');
+    label.style.background = r.color;
+    label.textContent = r.label;
+    if (!VIEW_ONLY) label.addEventListener('click', () => openRowPop(r.id, label));
+    const items = document.createElement('div');
+    items.className = 'items';
+    items.dataset.drop = r.id;
+    for (const id of r.items) if (T.images[id]) items.appendChild(tileEl(id));
+    row.append(label, items);
+    rows.appendChild(row);
+  }
+  const pool = $('#pool');
+  pool.textContent = '';
+  for (const id of T.pool) if (T.images[id]) pool.appendChild(tileEl(id));
+  $('#pool-count').textContent = T.pool.length;
+
+  syncSettings();
+  syncRowPop();
+}
+
+// ---------------------------------------------------------------------------
+// ドラッグ（OBS の「対話」でも動くよう、マウス／ポインターイベントで自前実装）
+// ---------------------------------------------------------------------------
+let drag = null;
+
+function onTileDown(e) {
+  if (VIEW_ONLY || e.button !== 0 || drag) return;
+  e.preventDefault();
+  const el = e.currentTarget;
+  drag = { id: el.dataset.id, el, sx: e.clientX, sy: e.clientY, started: false, ghost: null, ox: 0, oy: 0, trash: false };
+}
+
+function startDrag(e) {
+  const r = drag.el.getBoundingClientRect();
+  drag.ox = e.clientX - r.left;
+  drag.oy = e.clientY - r.top;
+  const g = drag.el.cloneNode(true);
+  g.classList.add('ghost');
+  g.style.width = r.width + 'px';
+  g.style.height = r.height + 'px';
+  document.body.appendChild(g);
+  drag.ghost = g;
+  drag.el.classList.add('placeholder');
+  drag.started = true;
+  document.body.classList.add('dragging');
+  closePops();
+}
+
+// 置き場所（行・ストック）の中で、ポインターの位置に入れるときの「この前に入れる」タイル
+function insertBeforeTile(container, x, y) {
+  for (const t of container.children) {
+    if (t === drag.el || !t.classList.contains('tile')) continue;
+    const r = t.getBoundingClientRect();
+    if (y < r.top) return t;
+    if (y <= r.bottom && x < r.left + r.width / 2) return t;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (!drag.started) {
+    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) return;
+    startDrag(e);
+  }
+  drag.ghost.style.transform = `translate(${e.clientX - drag.ox}px, ${e.clientY - drag.oy}px) scale(1.06)`;
+
+  // 画面の端に来たらスクロール
+  if (e.clientY < 30) window.scrollBy(0, -12);
+  else if (e.clientY > innerHeight - 30) window.scrollBy(0, 12);
+
+  const hit = document.elementFromPoint(e.clientX, e.clientY);
+  const trash = $('#trash');
+  drag.trash = !!(hit && hit.closest('#trash'));
+  trash.classList.toggle('over', drag.trash);
+  if (drag.trash || !hit) return;
+
+  let box = hit.closest('[data-drop]');
+  if (!box) {
+    const row = hit.closest('.tier');
+    if (row) box = row.querySelector('.items');
+    else if (hit.closest('#pool-wrap') && !local.hidePool) box = $('#pool');
+  }
+  if (!box) return;
+  const before = insertBeforeTile(box, e.clientX, e.clientY);
+  if (drag.el.parentElement !== box || drag.el.nextElementSibling !== before) box.insertBefore(drag.el, before);
+});
+
+function endDrag(commit) {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  document.body.classList.remove('dragging');
+  $('#trash').classList.remove('over');
+  if (!d.started) return;
+  d.ghost.remove();
+  d.el.classList.remove('placeholder');
+
+  if (commit && d.trash) {
+    send('deleteImage', { id: d.id });
+  } else if (commit && d.el.parentElement && d.el.parentElement.dataset.drop) {
+    const box = d.el.parentElement;
+    const index = [...box.children].filter(c => c.classList.contains('tile')).indexOf(d.el);
+    send('move', { id: d.id, to: box.dataset.drop, index });
+  } else {
+    render();
+  }
+  if (reloadPending) {
+    reloadPending = false;
+    // 自分の変更を保存してから読み直す
+    setTimeout(load, 400);
+  }
+}
+window.addEventListener('pointerup', () => endDrag(true));
+window.addEventListener('pointercancel', () => endDrag(false));
+window.addEventListener('blur', () => endDrag(false));
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    endDrag(false);
+    closePops();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 画像の追加（正方形に加工してからサーバーへ送る）
+// ---------------------------------------------------------------------------
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('画像を読み込めませんでした'));
+    img.src = url;
+  });
+}
+
+async function toSquare(file, fit) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) throw new Error('画像の大きさが分かりません');
+    const c = document.createElement('canvas');
+    c.width = c.height = IMAGE_SIZE;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    if (fit === 'contain') {
+      const k = IMAGE_SIZE / Math.max(w, h);
+      const dw = w * k, dh = h * k;
+      ctx.drawImage(img, (IMAGE_SIZE - dw) / 2, (IMAGE_SIZE - dh) / 2, dw, dh);
+    } else {
+      const s = Math.min(w, h);
+      ctx.drawImage(img, (w - s) / 2, (h - s) / 2, s, s, 0, 0, IMAGE_SIZE, IMAGE_SIZE);
+    }
+    const blob = await new Promise(r => c.toBlob(r, 'image/webp', 0.9));
+    if (blob && blob.type === 'image/webp') return blob;
+    return await new Promise(r => c.toBlob(r, 'image/png'));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+let uploading = false;
+async function addFiles(files) {
+  const list = [...files].filter(f => f && (f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name || '')));
+  if (!list.length) return toast('画像ファイルが見つかりませんでした');
+  if (uploading) return toast('追加中です。少し待ってからもう一度どうぞ');
+  uploading = true;
+  let ok = 0;
+  const errors = [];
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
+      toast(`画像を追加中… ${i + 1} / ${list.length}`, 0);
+      try {
+        const blob = await toSquare(f, local.fit);
+        await addImageBlob(blob, (f.name || '').replace(/\.[^.]+$/, ''));
+        ok++;
+      } catch (e) {
+        errors.push(`${f.name || '画像'}：${e.message}`);
+      }
+    }
+  } finally {
+    uploading = false;
+  }
+  if (errors.length) toast(`${ok}枚追加しました。追加できなかった画像があります → ${errors[0]}`, 6000);
+  else toast(`${ok}枚追加しました（ストックに入っています）`);
+}
+
+$('#file').addEventListener('change', e => {
+  addFiles(e.target.files);
+  e.target.value = '';
+});
+function pickFiles() {
+  $('#file').click();
+}
+$('#add-image').addEventListener('click', pickFiles);
+$('#opt-add-image').addEventListener('click', pickFiles);
+
+// パソコンのフォルダから画面へドラッグ＆ドロップ
+let dragDepth = 0;
+const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+window.addEventListener('dragenter', e => {
+  if (VIEW_ONLY || !hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  $('#drop-cover').classList.add('on');
+});
+window.addEventListener('dragover', e => {
+  if (!VIEW_ONLY && hasFiles(e)) e.preventDefault();
+});
+window.addEventListener('dragleave', e => {
+  if (!hasFiles(e)) return;
+  if (--dragDepth <= 0) {
+    dragDepth = 0;
+    $('#drop-cover').classList.remove('on');
+  }
+});
+window.addEventListener('drop', e => {
+  if (!hasFiles(e)) {
+    // ほかのブラウザのページから画像をドラッグしてきた場合
+    const url = e.dataTransfer && (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain'));
+    if (url && !VIEW_ONLY && /^https?:\/\//i.test(url.trim())) {
+      e.preventDefault();
+      addFromUrl(url.split('\n')[0]);
+    }
+    return;
+  }
+  e.preventDefault();
+  dragDepth = 0;
+  $('#drop-cover').classList.remove('on');
+  if (!VIEW_ONLY) addFiles(e.dataTransfer.files);
+});
+// Ctrl+V で貼り付け（コピーした画像・エクスプローラーでコピーした画像ファイル・画像のURL）
+window.addEventListener('paste', e => {
+  if (VIEW_ONLY || !e.clipboardData) return;
+  const cd = e.clipboardData;
+  let files = [...(cd.files || [])];
+  if (!files.length) {
+    files = [...(cd.items || [])].filter(i => i.kind === 'file').map(i => i.getAsFile()).filter(Boolean);
+  }
+  if (files.length) {
+    e.preventDefault();
+    return addFiles(files);
+  }
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 文字の入力欄への貼り付けはそのまま
+  const text = (cd.getData('text/plain') || '').trim();
+  if (/^https?:\/\/\S+$/i.test(text)) {
+    e.preventDefault();
+    addFromUrl(text);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// URL から追加
+// ---------------------------------------------------------------------------
+function nameFromUrl(url) {
+  try {
+    const last = new URL(url).pathname.split('/').filter(Boolean).pop() || '';
+    return decodeURIComponent(last).replace(/\.[^.]+$/, '');
+  } catch (e) {
+    return '';
+  }
+}
+
+async function addFromUrl(raw) {
+  const url = String(raw || '').trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) return toast('http から始まる画像のURLを入れてください');
+  toast('画像を読み込み中…', 0);
+  // 取り込めれば正方形に加工して保存（元の画像が消えても残る）
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      const blob = await res.blob();
+      if (blob.type.startsWith('image/')) {
+        await addImageBlob(await toSquare(blob, local.fit), nameFromUrl(url));
+        return toast('追加しました（ストックに入っています）');
+      }
+    }
+  } catch (e) {}
+  // サイトによっては取り込めないので、URL のまま表示する（見た目は正方形）
+  try {
+    await loadImage(url);
+  } catch (e) {
+    return toast('画像を読み込めませんでした。画像のURL（右クリック→「画像アドレスをコピー」）か確認してください', 5000);
+  }
+  const id = uid();
+  T.images[id] = { name: nameFromUrl(url), url, fit: local.fit };
+  T.pool.push(id);
+  save();
+  render();
+  toast('追加しました（URLのまま表示します。元の画像が消えると表示されなくなります）', 4000);
+}
+
+$('#toggle-url').addEventListener('click', () => {
+  const bar = $('#url-bar');
+  bar.hidden = !bar.hidden;
+  if (!bar.hidden) $('#url-input').focus();
+});
+function submitUrl() {
+  const input = $('#url-input');
+  if (!input.value.trim()) return;
+  addFromUrl(input.value);
+  input.value = '';
+}
+$('#url-add').addEventListener('click', submitUrl);
+$('#url-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitUrl();
+});
+
+// ---------------------------------------------------------------------------
+// 設定・行の編集（吹き出し）
+// ---------------------------------------------------------------------------
+function closePops() {
+  $('#settings').hidden = true;
+  $('#row-pop').hidden = true;
+  rowPopId = null;
+  disarmAll();
+}
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closePops));
+document.addEventListener('pointerdown', e => {
+  if (e.target.closest('.pop, #gear, .label')) return;
+  if (!$('#settings').hidden || !$('#row-pop').hidden) closePops();
+});
+
+function placePop(pop, anchor) {
+  pop.hidden = false;
+  const a = anchor.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  let left = a.right + 8;
+  if (left + w > innerWidth - 8) left = Math.max(8, a.left - w - 8);
+  let top = Math.min(a.top, innerHeight - h - 8);
+  pop.style.left = left + 'px';
+  pop.style.top = Math.max(8, top) + 'px';
+}
+
+// 2回押しで実行するボタン（確認ダイアログは OBS で出ないため）
+function armed(btn, text, fn) {
+  if (btn.classList.contains('armed')) {
+    disarmAll();
+    fn();
+    return;
+  }
+  disarmAll();
+  btn.dataset.text = btn.textContent;
+  btn.textContent = text;
+  btn.classList.add('armed');
+  btn._t = setTimeout(() => disarm(btn), 3000);
+}
+function disarm(btn) {
+  clearTimeout(btn._t);
+  btn.classList.remove('armed');
+  if (btn.dataset.text) btn.textContent = btn.dataset.text;
+}
+function disarmAll() {
+  document.querySelectorAll('.armed').forEach(disarm);
+}
+
+// ---- 全体の設定 ----
+$('#gear').addEventListener('click', () => {
+  if (!$('#settings').hidden) return closePops();
+  closePops();
+  syncSettings(true);
+  const pop = $('#settings');
+  pop.hidden = false;
+  pop.style.left = Math.max(8, innerWidth - pop.offsetWidth - 12) + 'px';
+  pop.style.top = '50px';
+});
+function syncSettings(force) {
+  if (!T) return;
+  const title = $('#opt-title');
+  if (force || document.activeElement !== title) title.value = T.title || '';
+  const size = $('#opt-size');
+  if (force || document.activeElement !== size) size.value = T.tileSize;
+  $('#opt-size-v').textContent = size.value;
+}
+let titleTimer = null;
+$('#opt-title').addEventListener('input', e => {
+  $('#title').textContent = e.target.value;
+  clearTimeout(titleTimer);
+  titleTimer = setTimeout(() => send('setOptions', { title: e.target.value }), 300);
+});
+$('#opt-size').addEventListener('input', e => {
+  $('#opt-size-v').textContent = e.target.value;
+  document.documentElement.style.setProperty('--tile', e.target.value + 'px');
+});
+$('#opt-size').addEventListener('change', e => send('setOptions', { tileSize: Number(e.target.value) }));
+document.querySelectorAll('#opt-fit button').forEach(b =>
+  b.addEventListener('click', () => {
+    local.fit = b.dataset.fit;
+    saveLocal();
+  })
+);
+$('#opt-hide-pool').addEventListener('change', e => {
+  local.hidePool = e.target.checked;
+  saveLocal();
+});
+$('#opt-hide-ui').addEventListener('change', e => {
+  local.hideUi = e.target.checked;
+  saveLocal();
+});
+$('#opt-transparent').addEventListener('change', e => {
+  local.transparent = e.target.checked;
+  saveLocal();
+});
+$('#toggle-pool').addEventListener('click', () => {
+  local.hidePool = !local.hidePool;
+  saveLocal();
+});
+$('#opt-add-row').addEventListener('click', () => send('addRow', {}));
+$('#add-row').addEventListener('click', () => send('addRow', {}));
+$('#opt-reset').addEventListener('click', e => armed(e.currentTarget, 'もう一度押すと戻します', () => send('resetAll', {})));
+$('#opt-delete-all').addEventListener('click', e =>
+  armed(e.currentTarget, 'もう一度押すと全部削除', () => send('deleteAllImages', {}))
+);
+
+// ---- 行の編集 ----
+let rowPopId = null;
+const rowColors = $('#row-colors');
+rowColors.innerHTML =
+  COLORS.map(c => `<button data-color="${c}" style="background:${c}" title="${c}"></button>`).join('') +
+  '<input type="color" id="row-color-custom" title="好きな色">';
+rowColors.addEventListener('click', e => {
+  const b = e.target.closest('button[data-color]');
+  if (b && rowPopId) send('updateRow', { id: rowPopId, color: b.dataset.color });
+});
+$('#row-color-custom').addEventListener('input', e => {
+  if (rowPopId) send('updateRow', { id: rowPopId, color: e.target.value });
+});
+
+function openRowPop(id, labelEl) {
+  if (rowPopId === id && !$('#row-pop').hidden) return closePops();
+  closePops();
+  rowPopId = id;
+  syncRowPop(true);
+  placePop($('#row-pop'), labelEl);
+}
+function syncRowPop(force) {
+  if (!rowPopId || !T) return;
+  const r = T.rows.find(x => x.id === rowPopId);
+  if (!r) return closePops();
+  const input = $('#row-label');
+  if (force || document.activeElement !== input) input.value = r.label;
+  rowColors.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.color === r.color));
+  if (document.activeElement !== $('#row-color-custom')) $('#row-color-custom').value = r.color;
+}
+let labelTimer = null;
+$('#row-label').addEventListener('input', e => {
+  const id = rowPopId;
+  const value = e.target.value;
+  clearTimeout(labelTimer);
+  labelTimer = setTimeout(() => send('updateRow', { id, label: value }), 250);
+});
+$('#row-label').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    clearTimeout(labelTimer);
+    send('updateRow', { id: rowPopId, label: e.target.value });
+    closePops();
+  }
+});
+document.querySelectorAll('[data-row]').forEach(b =>
+  b.addEventListener('click', e => {
+    const id = rowPopId;
+    if (!id || !T) return;
+    const at = T.rows.findIndex(r => r.id === id);
+    switch (b.dataset.row) {
+      case 'up':
+        return send('moveRow', { id, dir: -1 });
+      case 'down':
+        return send('moveRow', { id, dir: 1 });
+      case 'addAbove':
+        return send('addRow', { at, label: '新しい行' });
+      case 'addBelow':
+        return send('addRow', { at: at + 1, label: '新しい行' });
+      case 'clear':
+        return send('clearRow', { id });
+      case 'delete':
+        return armed(e.currentTarget, 'もう一度押すと削除', () => {
+          send('deleteRow', { id });
+          closePops();
+        });
+    }
+  })
+);
+
+load();
+</script>
+</body>
+</html>
